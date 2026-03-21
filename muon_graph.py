@@ -2,7 +2,7 @@ import os #  standard Python library for interacting with the operating system.
 import sys
 with open(sys.argv[0]) as f: code = f.read() # for logging, read the code of this file ASAP
 
-import torch
+import torc
 from torch import nn
 import torch.nn.functional as F
 from dataclasses import dataclass

@@ -1,4 +1,4 @@
 muon_venv/
 data/
 .idea/
-__pycache__/
+analyse/__pycache__/

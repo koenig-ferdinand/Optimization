@@ -24,3 +24,7 @@ def effective_rank(S):
 # CONDITION NUMBER
 def condition_number(S): 
     return S[0]/S[-1]
+
+# leading singular value ratio
+def ratio(S): 
+    return S[0]/S[1]

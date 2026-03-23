@@ -78,12 +78,11 @@ for mat in matrix_types:
         ax.plot(np.degrees(V_angles), label='V')
         ax.set_title(f'Layer {i}')
         ax.set_xlabel('Singular Vector Index')
-        ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
         ax.set_ylabel('Principal Angle (degrees)')
         ax.set_ylim(0, 95)
         ax.legend()
         ax.grid(True, alpha=0.3)
 
     plt.tight_layout(rect=[0, 0, 1, 0.98])
-    plt.savefig(f'analyse/plots/eff_principal_angles_{mat}.png', dpi=500)
+    plt.savefig(f'analyse/plots/principal_angles_{mat}.png', dpi=500)
     plt.close()

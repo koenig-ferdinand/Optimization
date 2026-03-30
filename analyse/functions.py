@@ -43,7 +43,8 @@ def principal_angles(X, Y):
     U_Y, S_Y, V_Y = torch.linalg.svd(Y.float())
 
     # consider min(effective_rank of X, Y)
-    k = int(min(effective_rank(S_X), min(effective_rank(S_Y), 15)))
+    #k = int(min(effective_rank(S_X), min(effective_rank(S_Y), 15)))
+    k = 50
 
     U_angles = subspace_angles(U_X[:, :k].numpy(), U_Y[:, :k].numpy())
     V_angles = subspace_angles(V_X.T[:, :k].numpy(), V_Y.T[:, :k].numpy())

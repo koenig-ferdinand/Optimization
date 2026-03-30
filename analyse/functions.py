@@ -8,7 +8,7 @@ def svd(matrix):
     return S
 
 # STABLE RANK
-# PRE: 1D vector containing singular values
+# PRE: 1D vector of singular values
 def stable_rank(S): 
     return (S**2).sum() / S[0]**2
 
@@ -30,13 +30,20 @@ def condition_number(S):
 def ratio(S): 
     return S[0]/S[1]
 
+def energy_k(S, threshold=0.9):
+    total = (S**2).sum()
+    running = 0
+    for i in range(len(S)):
+        running += S[i]**2
+        if running/total >= threshold: return i + 1
+
 # principle angles
 def principal_angles(X, Y): 
     U_X, S_X, V_X = torch.linalg.svd(X.float())
     U_Y, S_Y, V_Y = torch.linalg.svd(Y.float())
 
     # consider min(effective_rank of X, Y)
-    k = int(min(effective_rank(S_X), effective_rank(S_Y)))
+    k = int(min(effective_rank(S_X), min(effective_rank(S_Y), 15)))
 
     U_angles = subspace_angles(U_X[:, :k].numpy(), U_Y[:, :k].numpy())
     V_angles = subspace_angles(V_X.T[:, :k].numpy(), V_Y.T[:, :k].numpy())

@@ -1,4 +1,4 @@
 muon_venv/
 data/
 .idea/
-analyse/__pycache__/
+analyse/__pycache__/.DS_Store

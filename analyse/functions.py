@@ -1,5 +1,7 @@
 import torch
 from scipy.linalg import subspace_angles
+import numpy as np
+from scipy.stats import gumbel_r
 
 # SVD
 # POST: Vector of Singular Values (768,)
@@ -53,3 +55,41 @@ def principal_angles(X, Y):
 
 
 
+def SimMat(A, B): 
+    # for efficiency, first normalize, then one matrix multiplication
+    
+    A_norm = A / np.linalg.norm(A, axis = 0, keepdims=True)
+    B_norm  = B / np.linalg.norm(B, axis = 0, keepdims=True)
+
+    C = np.abs(A_norm.T @ B_norm)
+
+    return C 
+
+def MaxCosSim(A, B):
+    C = SimMat(A, B)
+
+    s_A = C.max(axis=1)
+
+    return s_A
+
+def DOCS(A, B):
+    s_A =  MaxCosSim(A, B) 
+    s_B =  MaxCosSim(B, A)
+
+    u_A, _ = gumbel_r.fit(s_A)
+    u_B, _ = gumbel_r.fit(s_B)
+
+    return (u_A + u_B)/2
+
+def right_singular_vectors(A, k=None): 
+    _, _, Vh = np.linalg.svd(A, full_matrices=False)
+    V = Vh.T    
+    if k is not None: 
+        V = V[:, :k]
+    return V
+
+def left_singular_vectors(A, k=None): 
+    U, _, _ = np.linalg.svd(A, full_matrices=False)
+    if k is not None: 
+        U = U[:, :k]
+    return U

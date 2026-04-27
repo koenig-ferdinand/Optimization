@@ -26,7 +26,7 @@ for opt in ['muon', 'adamw']:
 # READ from weightspace 
 data = torch.load(f'data/muon/state_step006200.pt', map_location = 'cpu')
 model_muon = data['model']
-data = torch.load(f'data/adamw/state_step006200.pt', map_location = 'cpu')
+data = torch.load(f'prewarm_data/adamw/state_step006200.pt', map_location = 'cpu')
 model_adamw = data['model']
 
 models = [['muon', model_muon], ['adamw', model_adamw]]
@@ -86,5 +86,5 @@ for m, metric in enumerate(metrics):
         ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig(f'analyse/plots/{metric}.png', dpi=600)
+    plt.savefig(f'analyse/plots/prewarm_{metric}.png', dpi=600)
     plt.close()

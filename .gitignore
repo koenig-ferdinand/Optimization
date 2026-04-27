@@ -2,3 +2,4 @@ muon_venv/
 data/
 .idea/
 analyse/__pycache__/.DS_Store
+prewarm_data/

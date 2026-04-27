@@ -58,13 +58,25 @@ for opt in models:
 for opt in models:
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     fig.suptitle(f'DOCS layer similarity — {opt}')
+
+    cmap = plt.get_cmap('inferno').copy()
+    cmap.set_bad('white')
+    mask = ~np.eye(12, dtype=bool)
+    
+
     for i, mat in enumerate(matrix_types):
         ax = axes[i // 3][i % 3]
-        im = ax.imshow(docs_results[opt][mat], cmap='inferno', origin='lower')
+
+        M = docs_results[opt][mat]        
+        vmin, vmax = M[mask].min(), M[mask].max()
+        M_plot = M.copy()
+        np.fill_diagonal(M_plot, np.nan)
+        im = ax.imshow(M_plot, cmap=cmap, vmin=vmin, vmax=vmax, origin='lower')
+
         ax.set_xticks(range(12)); ax.set_yticks(range(12))
         ax.set_xlabel('Layer'); ax.set_ylabel('Layer')
         ax.set_title(mat)
         fig.colorbar(im, ax=ax)
     plt.tight_layout()
-    plt.savefig(f'analyse/plots/docs_heatmap_{opt}.png', dpi=600)
+    plt.savefig(f'analyse/plots/docs_adjusted_heatmap_{opt}.png', dpi=600)
     plt.close()

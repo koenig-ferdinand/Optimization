@@ -249,7 +249,7 @@ class Hyperparameters:
     # evaluation and logging hyperparams
     val_loss_every : int = 125       # how many steps between val loss evaluations
     val_tokens : int = 10485760      # validation tokens (fixed for consistent comparisons)
-    save_every : int = 500           # save checkpoint every 500 steps for intermediate analysis
+    save_every : int = 100           # save checkpoint every 500 steps for intermediate analysis
 args = Hyperparameters()
 
 # set up DDP (distributed data parallel)
@@ -366,7 +366,7 @@ for step in range(args.num_iterations + 1):
     if master_process and (last_step or (args.save_every > 0 and step % args.save_every == 0)):
         torch.cuda.synchronize()
         training_time_ms += 1000*(time.time() - t0)
-        log = dict(step=step, code=code, model=raw_model.state_dict(), optimizers=[opt.state_dict() for opt in optimizers])
+        log = dict(step=step, model=raw_model.state_dict())
         torch.save(log, 'logs/%s/state_step%06d.pt' % (run_id, step))
         torch.cuda.synchronize()
         t0 = time.time()

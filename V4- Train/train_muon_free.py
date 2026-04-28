@@ -37,8 +37,8 @@ def zeropower_via_newtonschulz5(G, steps = 5, eps = 1e-7):
 
     for _ in range(steps):
         A = X @ X.T
-        B = A @ X
-        X = a*X + b*B + c*A@B
+        B = b * A + c * A @ A
+        X = a * X + B @ X
 
     if G.size(0) > G.size(1): # return to original shape
         X = X.T
@@ -319,7 +319,7 @@ class Hyperparameters:
     warmdown_iters : int = 1800      # linear warmdown iterations
     weight_decay : float = 0
     # evaluation and logging hyperparams
-    val_loss_every : int = 125       # how many steps between val loss evaluations
+    val_loss_every : int = 100       # how many steps between val loss evaluations
     val_tokens : int = 10485760      # validation tokens (fixed for consistent comparisons)
     save_every : int = 100           # save checkpoint every 500 steps for intermediate analysis
 args = Hyperparameters()

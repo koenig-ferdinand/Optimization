@@ -247,7 +247,7 @@ class Hyperparameters:
     warmdown_iters : int = 1800      # linear warmdown iterations
     weight_decay : float = 0
     # evaluation and logging hyperparams
-    val_loss_every : int = 125       # how many steps between val loss evaluations
+    val_loss_every : int = 100       # how many steps between val loss evaluations
     val_tokens : int = 10485760      # validation tokens (fixed for consistent comparisons)
     save_every : int = 100           # save checkpoint every 500 steps for intermediate analysis
 args = Hyperparameters()

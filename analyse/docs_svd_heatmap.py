@@ -32,12 +32,12 @@ for opt, model in models.items():
     for i in range(12): 
         QKV = model[f'_orig_mod.transformer.h.{i}.attn.c_attn.weight']
         Q, K, V = QKV.split(768, dim=0)
-        weights[opt]['Q'].append(functions.right_singular_vectors(Q.numpy(), thr))
-        weights[opt]['K'].append(functions.right_singular_vectors(K.numpy(), thr))
-        weights[opt]['V'].append(functions.right_singular_vectors(V.numpy(), thr))
+        weights[opt]['Q'].append(functions.left_singular_vectors(Q.numpy(), thr))
+        weights[opt]['K'].append(functions.left_singular_vectors(K.numpy(), thr))
+        weights[opt]['V'].append(functions.left_singular_vectors(V.numpy(), thr))
         for app in ['attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']:
             W = model[f'_orig_mod.transformer.h.{i}.{app}.weight']
-            weights[opt][app].append(functions.right_singular_vectors(W.numpy(), thr))
+            weights[opt][app].append(functions.left_singular_vectors(W.numpy(), thr))
 
 # step 2 compute 12x12 DOCS matrix for each (model, mat_type)
 docs_results = {opt: {} for opt in models}
@@ -76,5 +76,5 @@ for opt in models:
         ax.set_title(mat)
         fig.colorbar(im, ax=ax)
     plt.tight_layout()
-    plt.savefig(f'analyse/plots/docs_adjusted_newmodels_100svd_V_heatmap_{opt}.png', dpi=600)
+    plt.savefig(f'analyse/plots/docs/docs_adjusted_newmodels_15svd_U_heatmap_{opt}.png', dpi=600)
     plt.close()

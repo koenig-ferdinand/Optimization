@@ -16,12 +16,13 @@ import functions
 
 # MAIN.PY
 # READ from weightspace 
-data = torch.load(f'data/muon/state_step006200.pt', map_location = 'cpu')
+data = torch.load(f'data/muon_updated/state_step006200.pt', map_location = 'cpu')
 model_muon = data['model']
-data = torch.load(f'data/adamw/state_step006200.pt', map_location = 'cpu')
+data = torch.load(f'data/adamw_prewarm/state_step006200.pt', map_location = 'cpu')
 model_adamw = data['model']
 
 models = {'muon': model_muon, 'adamw': model_adamw}
+
 matrix_types = ['Q', 'K', 'V', 'attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']
 transpose_set = {'Q', 'K', 'V', 'mlp.c_fc'} 
 
@@ -78,5 +79,5 @@ for opt in models:
         ax.set_title(mat)
         fig.colorbar(im, ax=ax)
     plt.tight_layout()
-    plt.savefig(f'analyse/plots/docs_adjusted_heatmap_{opt}.png', dpi=600)
+    plt.savefig(f'analyse/plots/docs_adjusted_heatmap_prewarm_{opt}.png', dpi=600)
     plt.close()

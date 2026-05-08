@@ -4,9 +4,11 @@ import matplotlib.pyplot as plt
 import numpy as np 
 # -------------------------------------------------------------------------------------------------
 
+
 # FILES
 import functions
 # -------------------------------------------------------------------------------------------------
+
 
 # SETUP: 
 # functions file contains modular functions (svd, stable_rank, effective_rank,...)
@@ -15,66 +17,94 @@ import functions
  
 
 # MAIN.PY
-# READ from weightspace 
-data = torch.load(f'data/muon_updated/state_step006200.pt', map_location = 'cpu')
-model_muon = data['model']
-data = torch.load(f'data/adamw_prewarm/state_step006200.pt', map_location = 'cpu')
-model_adamw = data['model']
+#HEATMAP SETUP
+# heatmap for each type of matrix
+# x-axis step: 500, 1000, ..., 6000, 6200 (13)
+# y-axis layers 0-11 (12)
 
-thr = 15
+# iterate over iterations
+# compute difference of effective rank
+# low difference brighter, high difference dimmer
 
-models = {'muon': model_muon, 'adamw': model_adamw}
-matrix_types = ['Q', 'K', 'V', 'attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']
 
-# step 1, collect per layer matries for each (model, mat_type)
-weights = {opt: {mat: [] for mat in matrix_types} for opt in models}
-for opt, model in models.items():
-    for i in range(12): 
-        QKV = model[f'_orig_mod.transformer.h.{i}.attn.c_attn.weight']
-        Q, K, V = QKV.split(768, dim=0)
-        weights[opt]['Q'].append(functions.right_singular_vectors(Q.numpy(), thr))
-        weights[opt]['K'].append(functions.right_singular_vectors(K.numpy(), thr))
-        weights[opt]['V'].append(functions.right_singular_vectors(V.numpy(), thr))
-        for app in ['attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']:
-            W = model[f'_orig_mod.transformer.h.{i}.{app}.weight']
-            weights[opt][app].append(functions.right_singular_vectors(W.numpy(), thr))
+# DEFINE results dict 
+iterations = [500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6200]
 
-# step 2 compute 12x12 DOCS matrix for each (model, mat_type)
-docs_results = {opt: {} for opt in models}
+for n in ['muon', 'adamw']:
+    results = {}
+    for opt in ['muon', 'adamw']: 
+        results[opt] = {}
+        for mat in ['Q', 'K', 'V', 'attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']:
+            results[opt][mat] = []
 
-for opt in models: 
-    for mat in matrix_types: 
-        print(f"opt: {opt}, matix: {mat}")
-        M = np.zeros((12, 12))
-        layers = weights[opt][mat]
-        for i in range(12): 
-            for j in range(i, 12): 
-                M[i, j] = functions.DOCS(layers[i], layers[j])
-                M[j, i] = M[i, j]
-        docs_results[opt][mat] = M
+    for step in iterations: 
+        print(f"STEP {step}")
 
-# Step 3: plot, one figure per optimizer
-for opt in models:
+        # READ from weightspace 
+        data = torch.load(f'data/{n}/state_step{step:06d}.pt', map_location = 'cpu')
+        model = data['model']
+
+        models = [[f'{n}', model]]
+
+        for name, model in models:
+            print(f"MODEL: {name}")
+            appendices = ['attn.c_attn', 'attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']
+
+            # temporary dict 
+            step_results = {mat: [] for mat in ['Q', 'K', 'V', 'attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']}
+
+            for appendix in appendices:
+                print(f"\nAPPENDIX: {appendix}")
+
+                if appendix == 'attn.c_attn':   
+                    for i in range(12): 
+                        # print(f"# LAYER: {i}")
+                        layer = f'_orig_mod.transformer.h.{i}.{appendix}.weight'
+                        QKV = model[layer]
+                        Q, K, V = QKV.split(768, dim=0)
+                        for mat_name, matrix in zip(['Q', 'K', 'V'], [Q, K, V]):
+                            S = functions.svd(matrix)
+                            step_results[mat_name].append(functions.effective_rank(S))
+                        
+                else: 
+                    for i in range(12): 
+                        # print(f"# LAYER: {i}")
+                        layer = f'_orig_mod.transformer.h.{i}.{appendix}.weight'
+                        S = functions.svd(model[layer])
+                        step_results[appendix].append(functions.effective_rank(S))
+
+            for mat in step_results: 
+                results[name][mat].append(step_results[mat])
+
+    # PLOT the graphs 
+    matrix_types = ['Q', 'K', 'V', 'attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']
+
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    fig.suptitle(f'DOCS layer similarity — {opt}')
+    fig.suptitle(f'Effective Rank {n}')
 
-    cmap = plt.get_cmap('inferno').copy()
-    cmap.set_bad('white')
-    mask = ~np.eye(12, dtype=bool)
-    
     for i, mat in enumerate(matrix_types):
-        ax = axes[i // 3][i % 3]
+        row = i // 3
+        col = i % 3
+        ax = axes[row][col]
 
-        M = docs_results[opt][mat]
-        vmin, vmax = M[mask].min(), M[mask].max()
-        M_plot = M.copy()
-        np.fill_diagonal(M_plot, np.nan)
+        # muon_arr = np.array(results['muon'][mat]) # shape (14, 12)
+        # adamw_arr = np.array(results['adamw'][mat]) # shape (14, 12)
+        # diff = np.abs(muon_arr - adamw_arr).T
+        
+        # absolute 
+        abs_arr = np.abs(np.array(results[n][mat])).T
 
-        im = ax.imshow(M_plot, cmap=cmap, vmin=vmin, vmax=vmax, origin='lower')        
-        ax.set_xticks(range(12)); ax.set_yticks(range(12))
-        ax.set_xlabel('Layer'); ax.set_ylabel('Layer')
+        # im = ax.imshow(diff, aspect='auto', cmap='inferno_r', origin='lower', vmin=0, vmax=300)
+        im = ax.imshow(abs_arr, aspect='auto', cmap='inferno_r', origin='lower')
+        ax.set_xticks(range(len(iterations)))
+        ax.set_xticklabels(iterations, rotation = 45, fontsize = 7)
+        ax.set_yticks(range(12))
+        ax.set_xlabel('Iteration')
+        ax.set_ylabel('Layer')
         ax.set_title(mat)
-        fig.colorbar(im, ax=ax)
+        fig.colorbar(im, ax = ax)
+
     plt.tight_layout()
-    plt.savefig(f'analyse/plots/docs_adjusted_newmodels_100svd_V_heatmap_{opt}.png', dpi=600)
+    plt.savefig(f'analyse/plots/effective_rank_{n}_heatmap.png', dpi = 600)
     plt.close()
+

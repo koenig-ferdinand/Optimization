@@ -1,7 +1,11 @@
 # PACKAGES
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+_SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))          # V5 - Train/analyse/
+_V5_DIR       = os.path.dirname(_SCRIPT_DIR)                         # V5 - Train/
+_PROJECT_ROOT = os.path.dirname(_V5_DIR)                             # project root
+sys.path.insert(0, _V5_DIR)
 
 import torch
 import matplotlib.pyplot as plt
@@ -27,7 +31,7 @@ import functions
 #   - validation loss row (line chart, both models)
 #
 # Metric computation is parallelized across (optimizer, step) pairs via multiprocessing.
-# Run from project root: python analyse/evolution.py
+# Run from any directory: python "V5 - Train/analyse/evolution.py"
 # -------------------------------------------------------------------------------------------------
 
 
@@ -38,12 +42,12 @@ MATRIX_TYPES = ['Q', 'K', 'V', 'attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']
 OPTIMIZERS   = ['muon', 'adamw']
 OPT_COLORS   = {'muon': '#4C72B0', 'adamw': '#C44E52'}
 
-DATA_PATH = 'data'
-LOG_PATHS = {
-    'muon':  'V5 - Train/log_muon.txt',
-    'adamw': 'V5 - Train/log_adamw.txt',
+DATA_PATH  = os.path.join(_PROJECT_ROOT, 'data')
+LOG_PATHS  = {
+    'muon':  os.path.join(_V5_DIR, 'log_muon.txt'),
+    'adamw': os.path.join(_V5_DIR, 'log_adamw.txt'),
 }
-OUTPUT_DIR = 'analyse/plots'
+OUTPUT_DIR = os.path.join(_SCRIPT_DIR, 'plots')
 
 METRICS = [
     'effective_rank',
@@ -91,7 +95,7 @@ def compute_step(args):
     opt, step = args
     torch.set_num_threads(1)
 
-    path  = f'{DATA_PATH}/{opt}/state_step{step:06d}.pt'
+    path  = os.path.join(DATA_PATH, opt, f'state_step{step:06d}.pt')
     data  = torch.load(path, map_location='cpu')
     model = data['model']
 
@@ -100,13 +104,13 @@ def compute_step(args):
     for i in range(N_LAYERS):
 
         # QKV — split into Q, K, V
-        qkv   = model[f'_orig_mod.transformer.h.{i}.attn.c_attn.weight']
+        qkv     = model[f'_orig_mod.transformer.h.{i}.attn.c_attn.weight']
         Q, K, V = qkv.split(768, dim=0)
 
         for mat_name, matrix in zip(['Q', 'K', 'V'], [Q, K, V]):
-            S         = functions.svd(matrix)
-            alpha, _  = functions.fit_power_law_tail(S)
-            ek        = functions.energy_k(S, 0.9)
+            S        = functions.svd(matrix)
+            alpha, _ = functions.fit_power_law_tail(S)
+            ek       = functions.energy_k(S, 0.9)
             result[(mat_name, i)] = {
                 'effective_rank':   functions.effective_rank(S).item(),
                 'stable_rank':      functions.stable_rank(S).item(),
@@ -119,10 +123,10 @@ def compute_step(args):
 
         # Other projection matrices
         for appendix in ['attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']:
-            matrix    = model[f'_orig_mod.transformer.h.{i}.{appendix}.weight']
-            S         = functions.svd(matrix)
-            alpha, _  = functions.fit_power_law_tail(S)
-            ek        = functions.energy_k(S, 0.9)
+            matrix   = model[f'_orig_mod.transformer.h.{i}.{appendix}.weight']
+            S        = functions.svd(matrix)
+            alpha, _ = functions.fit_power_law_tail(S)
+            ek       = functions.energy_k(S, 0.9)
             result[(appendix, i)] = {
                 'effective_rank':   functions.effective_rank(S).item(),
                 'stable_rank':      functions.stable_rank(S).item(),

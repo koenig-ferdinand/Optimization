@@ -88,8 +88,41 @@ def right_singular_vectors(A, k=None):
         V = V[:, :k]
     return V
 
-def left_singular_vectors(A, k=None): 
+def left_singular_vectors(A, k=None):
     U, _, _ = np.linalg.svd(A, full_matrices=False)
-    if k is not None: 
+    if k is not None:
         U = U[:, :k]
     return U
+
+# SPECTRAL NORM
+# PRE: 1D vector of singular values
+def spectral_norm(S):
+    return S[0].item()
+
+# NUCLEAR NORM
+# PRE: 1D vector of singular values
+def nuclear_norm(S):
+    return S.sum().item()
+
+# RANK UTILIZATION
+# PRE: 1D vector of singular values, tuple shape (rows, cols)
+# POST: effective_rank / min(rows, cols) in [0, 1]
+def rank_utilization(S, shape):
+    return effective_rank(S).item() / min(shape)
+
+# POWER-LAW TAIL EXPONENT (Martin & Mahoney 2021)
+# PRE: 1D tensor of singular values
+# POST: (alpha, r_squared) — tail exponent and fit quality; alpha in [2,4] = well-trained
+def fit_power_law_tail(S, tail_fraction=0.9):
+    from scipy import stats
+    s = S.numpy() if hasattr(S, 'numpy') else np.array(S)
+    eigenvalues = s ** 2
+    eigenvalues = eigenvalues[eigenvalues > 1e-10]
+    if len(eigenvalues) < 10:
+        return float('nan'), 0.0
+    n_tail = max(int(len(eigenvalues) * tail_fraction), 10)
+    tail = np.sort(eigenvalues)[-n_tail:][::-1]
+    log_vals = np.log10(tail)
+    log_rank = np.log10(np.arange(1, len(tail) + 1))
+    slope, _, r_value, _, _ = stats.linregress(log_vals, log_rank)
+    return -slope, r_value ** 2

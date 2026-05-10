@@ -126,3 +126,15 @@ def fit_power_law_tail(S, tail_fraction=0.9):
     log_rank = np.log10(np.arange(1, len(tail) + 1))
     slope, _, r_value, _, _ = stats.linregress(log_vals, log_rank)
     return -slope, r_value ** 2
+
+# MARCHENKO-PASTUR SIGNAL FRACTION
+# PRE: 1D tensor of singular values, tuple shape (rows, cols)
+# POST: fraction of singular values above the MP bulk upper edge in [0, 1]
+def mp_signal_fraction(S, shape):
+    m, n = max(shape), min(shape)
+    gamma = n / m
+    s = S.numpy() if hasattr(S, 'numpy') else np.array(S)
+    eigenvalues = s ** 2
+    sigma2 = eigenvalues.sum() / (m * n)   # Frobenius-based noise estimate
+    lambda_plus = sigma2 * (1 + np.sqrt(gamma)) ** 2
+    return int(np.sum(eigenvalues > lambda_plus)) / len(eigenvalues)

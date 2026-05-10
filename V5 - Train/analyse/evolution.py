@@ -401,6 +401,30 @@ if __name__ == '__main__':
     arrays, cross_overlap = build_arrays(raw_results)
     del raw_results   # free ~1.4 GB of stored Vh data
 
+    # ── Save cache for correlation.py ────────────────────────────────
+    _log('Saving cache for correlation analysis...')
+    _MAT_KEY = {
+        'Q': 'Q', 'K': 'K', 'V': 'V',
+        'attn.c_proj': 'attn_c_proj',
+        'mlp.c_fc':    'mlp_c_fc',
+        'mlp.c_proj':  'mlp_c_proj',
+    }
+    cache_dir = os.path.join(_SCRIPT_DIR, 'cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    save = {'iterations': np.array(ITERATIONS)}
+    for opt in OPTIMIZERS:
+        s, l = val_loss_data[opt]
+        save[f'valloss__{opt}__steps']  = np.array(s)
+        save[f'valloss__{opt}__losses'] = np.array(l)
+        for mat in MATRIX_TYPES:
+            mk = _MAT_KEY[mat]
+            for metric, arr in arrays[opt][mat].items():
+                save[f'{opt}__{mk}__{metric}'] = arr
+    for mat in MATRIX_TYPES:
+        save[f'cross__{_MAT_KEY[mat]}'] = cross_overlap[mat]
+    np.savez_compressed(os.path.join(cache_dir, 'arrays.npz'), **save)
+    _log('  → Saved cache/arrays.npz')
+
     _log('Plotting...')
     for mat_type in MATRIX_TYPES:
         _log(f'  {mat_type}...')

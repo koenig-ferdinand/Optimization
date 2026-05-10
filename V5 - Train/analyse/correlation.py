@@ -7,9 +7,9 @@ _V5_DIR       = os.path.dirname(_SCRIPT_DIR)                  # V5 - Train/
 _PROJECT_ROOT = os.path.dirname(_V5_DIR)                      # project root
 sys.path.insert(0, _V5_DIR)
 
+import warnings
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 from scipy import stats
 
 # -------------------------------------------------------------------------------------------------
@@ -113,6 +113,8 @@ def load_cache(path):
             if opt in OPTIMIZERS and mat in MATRIX_TYPES:
                 arrays[opt][mat][metric] = raw[key]
 
+    # cross_overlap[mat] = (N_LAYERS, N_ITERS) mean principal angle Muon vs AdamW
+    # loaded for completeness; not used in correlation analysis (no single-optimizer ground truth)
     return iterations, val_loss, arrays, cross_overlap
 
 
@@ -348,6 +350,8 @@ def plot_metric_summary(corr):
 
 
 if __name__ == '__main__':
+    # pearsonr returns nan when one input is constant — expected for flat metrics
+    warnings.filterwarnings('ignore', category=stats.ConstantInputWarning)
     if not os.path.exists(CACHE_PATH):
         print(f'Cache not found: {CACHE_PATH}')
         print('Run evolution.py first to generate the cache.')

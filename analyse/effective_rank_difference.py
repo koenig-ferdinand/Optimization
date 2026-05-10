@@ -102,5 +102,5 @@ for i, mat in enumerate(matrix_types):
     fig.colorbar(im, ax = ax)
 
 plt.tight_layout()
-plt.savefig('analyse/plots/effective_rank_heatmap.png', dpi = 600)
+plt.savefig('analyse/plots/effective_rank_heatmap2.png', dpi = 600)
 plt.close()

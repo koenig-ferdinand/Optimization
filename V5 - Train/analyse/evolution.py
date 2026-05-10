@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 from multiprocessing import Pool, cpu_count
+import time
 
 # FILES
 import functions
@@ -104,6 +105,10 @@ _INIT_VH = {}
 def _init_worker(init_vh):
     global _INIT_VH
     _INIT_VH = init_vh
+
+
+def _log(msg):
+    print(f'[{time.strftime("%H:%M:%S")}] {msg}', flush=True)
 
 
 # -------------------------------------------------------------------------------------------------
@@ -244,7 +249,8 @@ def build_arrays(raw_results):
 
     # Cross-optimizer subspace overlap: mean principal angle Muon vs AdamW
     cross_overlap = {mat: np.full((N_LAYERS, n_iters), np.nan) for mat in MATRIX_TYPES}
-    for step in ITERATIONS:
+    n_steps = len(ITERATIONS)
+    for idx, step in enumerate(ITERATIONS):
         j = iter_idx[step]
         for mat_type in MATRIX_TYPES:
             for layer in range(N_LAYERS):
@@ -252,6 +258,8 @@ def build_arrays(raw_results):
                 Va = vh_all.get(('adamw', step, mat_type, layer))
                 if Vm is not None and Va is not None:
                     cross_overlap[mat_type][layer, j] = _mean_principal_angle(Vm, Va)
+        if (idx + 1) % 10 == 0 or idx == n_steps - 1:
+            _log(f'  cross-optimizer overlap: {idx + 1}/{n_steps} steps')
 
     return arrays, cross_overlap
 
@@ -344,15 +352,17 @@ def plot_matrix_type(mat_type, arrays, cross_overlap, val_loss_data):
 
 
 if __name__ == '__main__':
+    t_total = time.time()
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    print('Loading validation losses...')
+    _log('Loading validation losses...')
     val_loss_data = {opt: load_val_loss(LOG_PATHS[opt]) for opt in OPTIMIZERS}
 
     # Pre-compute W_0 right singular vectors (used for subspace_drift metric)
-    print('Pre-computing initialisation singular vectors...')
+    _log('Pre-computing initialisation singular vectors...')
     init_vh = {}
     for opt in OPTIMIZERS:
+        _log(f'  {opt}...')
         model0 = torch.load(
             os.path.join(DATA_PATH, opt, 'state_step000000.pt'), map_location='cpu'
         )['model']
@@ -369,19 +379,31 @@ if __name__ == '__main__':
 
     # Parallel metric computation
     jobs      = [(opt, step) for opt in OPTIMIZERS for step in ITERATIONS]
+    n_jobs    = len(jobs)
     n_workers = min(cpu_count(), 8)
-    print(f'Computing {len(jobs)} checkpoints using {n_workers} workers...')
+    _log(f'Computing {n_jobs} checkpoints using {n_workers} workers...')
 
+    raw_results = []
+    t_start = time.time()
     with Pool(n_workers, initializer=_init_worker, initargs=(init_vh,)) as pool:
-        raw_results = pool.map(compute_step, jobs)
+        for result in pool.imap_unordered(compute_step, jobs):
+            raw_results.append(result)
+            done     = len(raw_results)
+            elapsed  = time.time() - t_start
+            rate     = done / elapsed
+            eta      = (n_jobs - done) / rate if rate > 0 else 0
+            pct      = done / n_jobs * 100
+            _log(f'  [{done:3d}/{n_jobs}] ({pct:5.1f}%)  '
+                 f'{result[0]:5s} step {result[1]:5d}  |  '
+                 f'elapsed {elapsed:5.0f}s  eta ~{eta:4.0f}s')
 
-    print('Building arrays and computing cross-optimizer overlap...')
+    _log('Building arrays and computing cross-optimizer overlap...')
     arrays, cross_overlap = build_arrays(raw_results)
     del raw_results   # free ~1.4 GB of stored Vh data
 
-    print('Plotting...')
+    _log('Plotting...')
     for mat_type in MATRIX_TYPES:
-        print(f'  {mat_type}...')
+        _log(f'  {mat_type}...')
         plot_matrix_type(mat_type, arrays, cross_overlap, val_loss_data)
 
-    print('Done.')
+    _log(f'Done — total time {time.time() - t_total:.0f}s')

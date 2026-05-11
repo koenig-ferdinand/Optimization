@@ -256,9 +256,12 @@ def plot_scatter_top_pairs(corr, iterations, val_loss, arrays, n_top=16):
     averaged across optimizers.  Both optimizers shown on each panel.
     """
     # Rank all (metric, mat, layer) triples by mean |partial r| across optimizers
+    EXCLUDE = {'subspace_drift'}
     scores = []
     for mat in MATRIX_TYPES:
         for mi, metric in enumerate(ALL_METRICS):
+            if metric in EXCLUDE:
+                continue
             for layer in range(N_LAYERS):
                 vals = [abs(corr[opt][mat]['partial'][mi, layer]) for opt in OPTIMIZERS]
                 vals = [v for v in vals if np.isfinite(v)]

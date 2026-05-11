@@ -95,7 +95,7 @@ for n in ['muon', 'adamw']:
         abs_arr = np.abs(np.array(results[n][mat])).T
 
         # im = ax.imshow(diff, aspect='auto', cmap='inferno_r', origin='lower', vmin=0, vmax=300)
-        im = ax.imshow(abs_arr, aspect='auto', cmap='inferno_r', origin='lower')
+        im = ax.imshow(abs_arr, aspect='auto', cmap='inferno_r', origin='lower', vmin=270, vmax=740)
         ax.set_xticks(range(len(iterations)))
         ax.set_xticklabels(iterations, rotation = 45, fontsize = 7)
         ax.set_yticks(range(12))
@@ -105,6 +105,6 @@ for n in ['muon', 'adamw']:
         fig.colorbar(im, ax = ax)
 
     plt.tight_layout()
-    plt.savefig(f'analyse/plots/effective_rank_{n}_heatmap.png', dpi = 600)
+    plt.savefig(f'analyse/plots/effective_rank_{n}_fixed_heatmap.png', dpi = 600)
     plt.close()
 

@@ -346,7 +346,7 @@ def plot_matrix_type(mat_type, arrays, cross_overlap, val_loss_data):
         ax_vl.grid(True, alpha=0.3)
 
     out = os.path.join(OUTPUT_DIR, f'evolution_{safe}.png')
-    fig.savefig(out, dpi=150, bbox_inches='tight')
+    fig.savefig(out, dpi=600, bbox_inches='tight')
     plt.close(fig)
     print(f'  → Saved {out}')
 

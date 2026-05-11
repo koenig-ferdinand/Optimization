@@ -113,7 +113,7 @@ def rank_utilization(S, shape):
 # POWER-LAW TAIL EXPONENT (Martin & Mahoney 2021)
 # PRE: 1D tensor of singular values
 # POST: (alpha, r_squared) — tail exponent and fit quality; alpha in [2,4] = well-trained
-def fit_power_law_tail(S, tail_fraction=0.9):
+def fit_power_law_tail(S, tail_fraction=0.1):
     from scipy import stats
     s = S.numpy() if hasattr(S, 'numpy') else np.array(S)
     eigenvalues = s ** 2

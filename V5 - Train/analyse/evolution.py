@@ -320,11 +320,10 @@ def plot_matrix_type(mat_type, arrays, cross_overlap, val_loss_data):
     for row, (_, d_m, d_a, label, cmap) in enumerate(hm_rows):
         vmin = np.nanmin([d_m, d_a])
         vmax = np.nanmax([d_m, d_a])
-        is_last = (row == n_hm_rows - 1)
         _add_heatmap(fig, gs, row, 0, d_m, f'{label}  [MUON]',
-                     cmap, vmin, vmax, x_tick_pos, x_tick_labels, is_last)
+                     cmap, vmin, vmax, x_tick_pos, x_tick_labels, True)
         _add_heatmap(fig, gs, row, 1, d_a, f'{label}  [ADAMW]',
-                     cmap, vmin, vmax, x_tick_pos, x_tick_labels, is_last)
+                     cmap, vmin, vmax, x_tick_pos, x_tick_labels, True)
 
     # ── Cross-optimizer subspace overlap (full width) ─────────────────
     _add_heatmap(fig, gs, n_hm_rows + 1, 0, cross_overlap[mat_type],

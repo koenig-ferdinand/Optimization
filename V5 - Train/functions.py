@@ -135,6 +135,6 @@ def mp_signal_fraction(S, shape):
     gamma = n / m
     s = S.numpy() if hasattr(S, 'numpy') else np.array(S)
     eigenvalues = s ** 2
-    sigma2 = eigenvalues.sum() / (m * n)   # Frobenius-based noise estimate
+    sigma2 = eigenvalues.mean()             # mean eigenvalue ≈ m·σ²_entry, correct MP scale
     lambda_plus = sigma2 * (1 + np.sqrt(gamma)) ** 2
     return int(np.sum(eigenvalues > lambda_plus)) / len(eigenvalues)

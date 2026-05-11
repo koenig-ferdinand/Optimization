@@ -154,44 +154,47 @@ def compute_identity_proximity(svd_data, weights):
 
 def plot_identity_proximity(prox):
     """
-    One figure: 2 rows (optimizer) × 6 cols (matrix type).
-    Each panel: heatmap rows=4 metrics, cols=12 layers.
+    Absolute-value heatmap: 4 rows (metrics) × 2 cols (Muon | AdamW).
+    Each panel: y = matrix type (6), x = layer (0-11).
+    Shared colorbar per metric row so Muon and AdamW use the same scale.
+    NaN cells (uv_angle / frob_from_I for non-square matrices) shown in white.
     """
-    n_metrics = len(IDENTITY_METRICS)
+    cmap = plt.get_cmap('plasma').copy()
+    cmap.set_bad('white')
+
     fig, axes = plt.subplots(
-        len(OPTIMIZERS), len(MATRIX_TYPES),
-        figsize=(22, 6), dpi=150,
+        len(IDENTITY_METRICS), len(OPTIMIZERS),
+        figsize=(14, 11), dpi=150,
+        squeeze=False,
     )
-    fig.suptitle('Identity Proximity — final checkpoint', fontsize=13, y=1.01)
+    fig.suptitle('Identity Proximity — final checkpoint (absolute values)', fontsize=13, y=1.01)
 
     layer_ticks = list(range(N_LAYERS))
 
-    for oi, opt in enumerate(OPTIMIZERS):
-        for mi, mat in enumerate(MATRIX_TYPES):
-            ax = axes[oi][mi]
-            data = np.array([prox[opt][mat][m] for m in IDENTITY_METRICS])  # (4, 12)
+    for mi, metric in enumerate(IDENTITY_METRICS):
+        # Shared colour scale across both optimisers for this metric
+        all_vals = []
+        for opt in OPTIMIZERS:
+            for mat in MATRIX_TYPES:
+                finite = prox[opt][mat][metric]
+                all_vals.extend(finite[np.isfinite(finite)].tolist())
+        vmin = min(all_vals) if all_vals else 0
+        vmax = max(all_vals) if all_vals else 1
 
-            # Per-row normalisation so each metric uses its own scale
-            # (all-NaN rows = uv_angle/frob_from_I for non-square matrices — silenced)
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', RuntimeWarning)
-                row_min = np.nanmin(data, axis=1, keepdims=True)
-                row_max = np.nanmax(data, axis=1, keepdims=True)
-            normed  = (data - row_min) / np.where(row_max - row_min > 0,
-                                                   row_max - row_min, 1)
+        for oi, opt in enumerate(OPTIMIZERS):
+            ax = axes[mi][oi]
+            # (6, 12) array: rows = matrix types, cols = layers
+            data = np.array([prox[opt][mat][metric] for mat in MATRIX_TYPES])
 
-            im = ax.imshow(normed, aspect='auto', cmap='plasma',
-                           vmin=0, vmax=1, origin='upper')
+            im = ax.imshow(data, aspect='auto', cmap=cmap,
+                           vmin=vmin, vmax=vmax, origin='upper')
             ax.set_xticks(layer_ticks)
-            ax.set_xticklabels([str(l) for l in layer_ticks], fontsize=6)
-            ax.set_yticks(range(n_metrics))
-            ax.set_yticklabels([IDENTITY_LABELS[m] for m in IDENTITY_METRICS], fontsize=7)
-            ax.set_xlabel('Layer', fontsize=7)
-            if mi == 0:
-                ax.set_ylabel(opt.upper(), fontsize=8)
-            if oi == 0:
-                ax.set_title(mat, fontsize=9)
-            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='(row-normed)')
+            ax.set_xticklabels([str(l) for l in layer_ticks], fontsize=7)
+            ax.set_yticks(range(len(MATRIX_TYPES)))
+            ax.set_yticklabels(MATRIX_TYPES, fontsize=8)
+            ax.set_xlabel('Layer', fontsize=8)
+            ax.set_title(f'{IDENTITY_LABELS[metric]} — {opt.upper()}', fontsize=9)
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     fig.tight_layout()
     out = os.path.join(OUTPUT_DIR, 'identity_proximity.png')

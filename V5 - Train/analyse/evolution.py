@@ -68,6 +68,7 @@ METRICS = [
     'spectral_norm',
     'nuclear_norm',
     'alpha',
+    'alpha_clauset',
     'mp_signal_fraction',
     'update_magnitude',
     'effective_step_size',
@@ -80,6 +81,7 @@ METRIC_LABELS = {
     'spectral_norm':      'Spectral Norm (σ₁)',
     'nuclear_norm':       'Nuclear Norm (Σσ)',
     'alpha':              'Power-law α',
+    'alpha_clauset':      'Power-law α (Clauset)',
     'mp_signal_fraction': 'MP Signal Fraction',
     'update_magnitude':   'Update Magnitude ‖ΔW‖_F',
     'effective_step_size':'Effective Step Size ‖ΔW‖/‖W‖',
@@ -92,6 +94,7 @@ METRIC_CMAPS = {
     'spectral_norm':      'inferno',
     'nuclear_norm':       'inferno',
     'alpha':              'RdYlGn',
+    'alpha_clauset':      'RdYlGn',
     'mp_signal_fraction': 'viridis',
     'update_magnitude':   'hot_r',
     'effective_step_size':'hot_r',
@@ -143,6 +146,7 @@ def _process_matrix(mat_curr, mat_prev, opt, mat_key, layer_i):
     Vh_top   = Vh[:K_SUBSPACE].numpy()
 
     alpha, _ = functions.fit_power_law_tail(S)
+    alpha_clauset, _ = functions.fit_power_law_tail_Clauset(S)
     ek       = functions.energy_k(S, 0.9)
 
     # Subspace drift from initialisation (W_0 right singular vectors)
@@ -167,6 +171,7 @@ def _process_matrix(mat_curr, mat_prev, opt, mat_key, layer_i):
         'nuclear_norm':       functions.nuclear_norm(S),
         'energy_k':           ek if ek is not None else int(mat_curr.shape[0]),
         'alpha':              alpha,
+        'alpha_clauset':      alpha_clauset,
         'mp_signal_fraction': functions.mp_signal_fraction(S, mat_curr.shape),
         'update_magnitude':   upd_mag,
         'effective_step_size':eff_step,
@@ -379,7 +384,7 @@ if __name__ == '__main__':
     # Parallel metric computation
     jobs      = [(opt, step) for opt in OPTIMIZERS for step in ITERATIONS]
     n_jobs    = len(jobs)
-    n_workers = min(cpu_count(), 8)
+    n_workers = min(cpu_count(), 4)
     _log(f'Computing {n_jobs} checkpoints using {n_workers} workers...')
 
     raw_results = []

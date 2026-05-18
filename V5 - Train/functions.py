@@ -2,6 +2,7 @@ import torch
 from scipy.linalg import subspace_angles
 import numpy as np
 from scipy.stats import gumbel_r
+import warnings
 
 # SVD
 # POST: Vector of Singular Values (768,)
@@ -110,9 +111,10 @@ def nuclear_norm(S):
 def rank_utilization(S, shape):
     return effective_rank(S).item() / min(shape)
 
-# POWER-LAW TAIL EXPONENT (Martin & Mahoney 2021)
+# POWER-LAW TAIL EXPONENT — regression-based (fast, approximate)
 # PRE: 1D tensor of singular values
-# POST: (alpha, r_squared) — tail exponent and fit quality; alpha in [2,4] = well-trained
+# POST: (alpha, r_squared) — density exponent α where ρ(λ) ~ λ^{-α};
+#       alpha in [2,4] = well-trained
 def fit_power_law_tail(S, tail_fraction=0.1):
     from scipy import stats
     s = S.numpy() if hasattr(S, 'numpy') else np.array(S)
@@ -125,7 +127,31 @@ def fit_power_law_tail(S, tail_fraction=0.1):
     log_vals = np.log10(tail)
     log_rank = np.log10(np.arange(1, len(tail) + 1))
     slope, _, r_value, _, _ = stats.linregress(log_vals, log_rank)
-    return -slope, r_value ** 2
+    r_squared = r_value ** 2
+    if r_squared < 0.9:
+        return float('nan'), r_squared
+    return -slope + 1, r_squared   # +1: converts rank exponent to density exponent
+
+
+# POWER-LAW TAIL EXPONENT — Clauset et al. MLE (principled, slower)
+# PRE: 1D tensor of singular values
+# POST: (alpha, sigma) — density exponent and its std error;
+#       alpha in [2,4] = well-trained; sigma < 0.5 = reliable fit
+def fit_power_law_tail_Clauset(S):
+    import powerlaw
+    s = S.numpy() if hasattr(S, 'numpy') else np.array(S)
+    eigenvalues = s ** 2
+    eigenvalues = eigenvalues[eigenvalues > 1e-10]
+    if len(eigenvalues) < 10:
+        return float('nan'), float('nan')
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        fit = powerlaw.Fit(eigenvalues, verbose=False)
+    alpha = fit.alpha
+    sigma = fit.sigma
+    if sigma > 0.5:
+        return float('nan'), sigma
+    return alpha, sigma
 
 # MARCHENKO-PASTUR SIGNAL FRACTION
 # PRE: 1D tensor of singular values, tuple shape (rows, cols)

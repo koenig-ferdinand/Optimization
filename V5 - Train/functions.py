@@ -114,23 +114,32 @@ def rank_utilization(S, shape):
 # POWER-LAW TAIL EXPONENT — regression-based (fast, approximate)
 # PRE: 1D tensor of singular values
 # POST: (alpha, r_squared) — density exponent α where ρ(λ) ~ λ^{-α};
-#       alpha in [2,4] = well-trained
-def fit_power_law_tail(S, tail_fraction=0.1):
+#       alpha in [2,4] = well-trained; nan = no valid power-law tail found
+#
+# tail_fraction=0.15 is chosen so that both Muon and AdamW use the same
+# top-15% of their respective spectra, keeping cross-model comparison valid.
+# Gives 115 eigenvalues for 768-dim matrices — enough for a stable regression
+# while keeping bulk contamination moderate.
+def fit_power_law_tail(S, tail_fraction=0.15, r2_threshold=0.80):
     from scipy import stats
     s = S.numpy() if hasattr(S, 'numpy') else np.array(S)
-    eigenvalues = s ** 2
+    eigenvalues = np.sort(s ** 2)[::-1]          # descending
     eigenvalues = eigenvalues[eigenvalues > 1e-10]
     if len(eigenvalues) < 10:
         return float('nan'), 0.0
+
     n_tail = max(int(len(eigenvalues) * tail_fraction), 10)
-    tail = np.sort(eigenvalues)[-n_tail:][::-1]
+    tail   = eigenvalues[:n_tail]                 # top fraction only
+
     log_vals = np.log10(tail)
     log_rank = np.log10(np.arange(1, len(tail) + 1))
     slope, _, r_value, _, _ = stats.linregress(log_vals, log_rank)
     r_squared = r_value ** 2
-    if r_squared < 0.9:
+
+    if r_squared < r2_threshold:
         return float('nan'), r_squared
-    return -slope + 1, r_squared   # +1: converts rank exponent to density exponent
+
+    return -slope + 1, r_squared                  # +1: rank → density exponent
 
 
 # POWER-LAW TAIL EXPONENT — Clauset et al. MLE (principled, slower)

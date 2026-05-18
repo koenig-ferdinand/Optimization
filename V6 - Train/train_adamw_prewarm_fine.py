@@ -280,8 +280,8 @@ _reg_matrices    = [m.strip() for m in _reg.reg_matrices.split(',')]
 _reg_layers      = 'all' if _reg.reg_layers == 'all' else [int(x) for x in _reg.reg_layers.split(',')]
 
 # V6 AdamW baseline thresholds for early stopping (from log_adamw.txt)
-_BASELINE = {500: 4.3320, 1000: 3.9219, 1500: 3.7637, 2000: 3.6796, 2500: 3.6297, 3000: 3.5881}
-_TOLERANCE = {500: 0.15, 1000: 0.10, 1500: 0.08, 2000: 0.07, 2500: 0.06, 3000: 0.05}
+_BASELINE  = {500: 4.3320, 1000: 3.9219, 1500: 3.7637, 2000: 3.6796, 2500: 3.6297, 3000: 3.5881}
+_TOLERANCE = {500: 0.30,  1000: 0.25,  1500: 0.20,  2000: 0.15,  2500: 0.12,  3000: 0.10}
 
 # set up DDP (distributed data parallel)
 assert torch.cuda.is_available()
@@ -394,7 +394,8 @@ for step in range(args.num_iterations + 1):
             val_losses.append((step, val_loss.item()))
 
         # early stopping — checked on ALL processes (val_loss already all-reduced)
-        if _reg.early_stop:
+        # skip first 300 steps: loss starts at ~11 (random init) and warmup is noisy
+        if _reg.early_stop and step >= 400:
             stop = False
             if val_loss.item() > 5.5:                                  # hard diverge
                 stop = True
@@ -457,9 +458,9 @@ for step in range(args.num_iterations + 1):
 
     if master_process:
         approx_time = training_time_ms + 1000*(time.time() - t0)
-        print(f"step:{step+1}/{args.num_iterations} train_loss:{train_loss.item():.4f} reg_loss:{reg_loss_val:.6f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms")
+        print(f"step:{step+1}/{args.num_iterations} train_loss:{train_loss.item():.4f} reg_loss:{reg_loss_val:.2e} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms")
         with open(logfile, "a") as f:
-            f.write(f"step:{step+1}/{args.num_iterations} train_loss:{train_loss.item():.4f} reg_loss:{reg_loss_val:.6f} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms\n")
+            f.write(f"step:{step+1}/{args.num_iterations} train_loss:{train_loss.item():.4f} reg_loss:{reg_loss_val:.2e} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms\n")
         train_losses.append((step+1, train_loss.item()))
 
 if master_process:

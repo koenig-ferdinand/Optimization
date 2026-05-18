@@ -52,7 +52,7 @@ conda activate muon
 # Paths  —  adjust PROJECT_ROOT if your folder layout differs
 # =============================================================================
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PROJECT_ROOT="/cluster/scratch/leochen/Muon/V4"
 export V6_DIR="$PROJECT_ROOT/V6 - Train"   # exported so Python heredoc can read it
 
 echo "Project root : $PROJECT_ROOT"

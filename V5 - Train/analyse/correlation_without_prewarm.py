@@ -259,7 +259,7 @@ def plot_scatter_top_pairs(corr, iterations, val_loss, arrays, n_top=16):
     averaged across optimizers.  Both optimizers shown on each panel.
     """
     # Rank all (metric, mat, layer) triples by mean |partial r| across optimizers
-    EXCLUDE = {'subspace_drift'}
+    EXCLUDE = {'subspace_drift','update_magnitude','effective_step_size','rank_utilization'}  # noisy metrics with many nans, which dominate top ranks by |r|
     scores = []
     for mat in MATRIX_TYPES:
         for mi, metric in enumerate(ALL_METRICS):

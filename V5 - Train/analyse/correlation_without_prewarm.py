@@ -38,7 +38,7 @@ OUTPUT_DIR = os.path.join(_SCRIPT_DIR, 'plots')
 OPTIMIZERS   = ['muon', 'adamw']
 OPT_COLORS   = {'muon': '#4C72B0', 'adamw': '#C44E52'}
 MATRIX_TYPES = ['Q', 'K', 'V', 'attn.c_proj', 'mlp.c_fc', 'mlp.c_proj']
-START_ITER = 300   # skip warmup iterations with flat loss and noisy metrics
+START_ITER = 400   # skip warmup iterations with flat loss and noisy metrics
 
 KEY_TO_MAT = {
     'Q':           'Q',
@@ -56,6 +56,7 @@ ALL_METRICS = [
     'spectral_norm',
     'nuclear_norm',
     'alpha',
+    'alpha_clauset',
     'mp_signal_fraction',
     'update_magnitude',
     'effective_step_size',
@@ -69,7 +70,8 @@ METRIC_LABELS = {
     'rank_utilization':   'Rank Utilization',
     'spectral_norm':      'Spectral Norm',
     'nuclear_norm':       'Nuclear Norm',
-    'alpha':              'Power-law α',
+    'alpha':              'Power-law α (regression)',
+    'alpha_clauset':      'Power-law α (Clauset MLE)',
     'mp_signal_fraction': 'MP Signal Fraction',
     'update_magnitude':   'Update Magnitude',
     'effective_step_size':'Effective Step Size',

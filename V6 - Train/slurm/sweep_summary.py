@@ -165,6 +165,75 @@ print(f'{"Muon baseline (target)":<{COL}} {"—":<16} {"—":>7}  {SWEEP_END:>5}
 print('=' * 95)
 
 
+# ── Detailed trajectory (every 100 steps) ────────────────────────────────────
+
+# Lookups: {step: loss}
+_traj     = {r['exp_name']: dict(zip(r['steps'], r['losses'])) for r in results}
+_adamw_lut = dict(zip(adamw_steps, adamw_losses))
+_muon_lut  = dict(zip(muon_steps,  muon_losses))
+
+# All 100-step checkpoints that appear in any experiment's log
+_all_steps = sorted({s for r in results for s in r['steps'] if s % 100 == 0})
+if not _all_steps:
+    _all_steps = list(range(100, SWEEP_END + 1, 100))
+
+_PER_ROW = 9   # step:loss tokens per printed line
+
+def _traj_rows(lut, label, adamw_lut, steps):
+    """Yield rows of formatted step:loss tokens for one series."""
+    tokens = []
+    for s in steps:
+        v = lut.get(s)
+        if v is None:
+            break                          # series ended early — stop here
+        av = adamw_lut.get(s, float('nan'))
+        marker = '↓' if not np.isnan(av) and v < av else ' '
+        tokens.append(f'{s:>4}:{v:.4f}{marker}')
+    return tokens
+
+print()
+print('─' * 95)
+print('  Val-loss trajectory  (every 100 steps)   ↓ = below AdamW at that step')
+print('─' * 95)
+
+# ── Print AdamW & Muon reference rows once ───────────────────────────────────
+for ref_label, ref_lut in [('  AdamW ref', _adamw_lut), ('   Muon ref', _muon_lut)]:
+    ref_tokens = []
+    for s in _all_steps:
+        v = ref_lut.get(s)
+        ref_tokens.append(f'{s:>4}:{v:.4f} ' if v is not None else f'{s:>4}:  —    ')
+    if ref_tokens:
+        print(f'\n{ref_label}  ·  baseline')
+        for i in range(0, len(ref_tokens), _PER_ROW):
+            print('    ' + '  '.join(ref_tokens[i:i + _PER_ROW]))
+
+print()
+print('─' * 95)
+
+# ── Print one block per experiment, grouped by regularizer ───────────────────
+cur_reg = None
+for r in results:          # keep original EXPERIMENTS order
+    lut = _traj[r['exp_name']]
+
+    # Separator between regularizer families
+    if r['reg_name'] != cur_reg:
+        cur_reg = r['reg_name']
+        print(f'\n  ── {cur_reg} ──')
+
+    status_tag = '  [STOPPED]' if r['early_stopped'] else ('  [MISSING]' if r['missing'] else '')
+    print(f'\n  {r["exp_name"]}  ·  λ={r["lam"]:.0e}{status_tag}')
+
+    tokens = _traj_rows(lut, r['exp_name'], _adamw_lut, _all_steps)
+    if not tokens:
+        print('    (no data)')
+        continue
+    for i in range(0, len(tokens), _PER_ROW):
+        print('    ' + '  '.join(tokens[i:i + _PER_ROW]))
+
+print()
+print('─' * 95)
+
+
 # ── Best-λ per regularizer ────────────────────────────────────────────────────
 
 print('\nBest λ per regularizer (lowest val_loss at sweep end):')

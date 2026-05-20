@@ -66,13 +66,13 @@ EXPERIMENTS = [
     # After this finishes, sweep_summary.py will automatically use it instead
     # of log_adamw.txt (which used a 6200-step schedule).
 
-    dict(exp_name='adamw_3000', reg_name='none', reg_lambda=0.0, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='adamw_3000', reg_name='none', reg_lambda=0.0, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100,   early_stop=False),
 
     # ── Phase 2: full runs with best λ per regularizer (6200 iter) ───────────
-    # Always include a same-schedule AdamW baseline first so the comparison
-    # is fair (same num_iterations = same LR decay schedule as reg runs).
+    # sweep_summary.py will auto-use log_adamw_{SWEEP_END}.txt as the baseline.
+    # Before running Phase 2: copy logs/adamw_3000/log.txt → log_adamw_3000.txt,
+    # then set SWEEP_END=6200 in sweep_summary.py — it will fall back to log_adamw.txt.
 
-    # dict(exp_name='adamw_6200',     reg_name='none',           reg_lambda=0.0,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
     # dict(exp_name='full_sv_var',    reg_name='sv_variance',    reg_lambda=5e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
     # dict(exp_name='full_orth',      reg_name='orthogonal',     reg_lambda=1e-5, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
 

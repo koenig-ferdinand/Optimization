@@ -14,6 +14,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP # DDP wrapper, whic
 import uuid
 import time
 import subprocess
+import argparse
 import matplotlib.pyplot as plt
 
 
@@ -322,7 +323,21 @@ class Hyperparameters:
     val_loss_every : int = 100       # how many steps between val loss evaluations
     val_tokens : int = 10485760      # validation tokens (fixed for consistent comparisons)
     save_every : int = 100           # save checkpoint every 500 steps for intermediate analysis
+    # naming / output
+    exp_name : str = ''              # if set, logs go to logs/{exp_name}/log.txt
 args = Hyperparameters()
+
+# Allow key hyperparameters to be overridden from the command line
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument('--exp_name',       type=str,   default=args.exp_name)
+_parser.add_argument('--num_iterations', type=int,   default=args.num_iterations)
+_parser.add_argument('--warmdown_iters', type=int,   default=args.warmdown_iters)
+_parser.add_argument('--save_every',     type=int,   default=args.save_every)
+_cli, _ = _parser.parse_known_args()
+args.exp_name       = _cli.exp_name
+args.num_iterations = _cli.num_iterations
+args.warmdown_iters = _cli.warmdown_iters
+args.save_every     = _cli.save_every
 
 # set up DDP (distributed data parallel)
 assert torch.cuda.is_available()
@@ -381,12 +396,17 @@ def get_lr(it):
         return decay_ratio
 schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
 
-# begin logging
+# begin logging — always inside V6 - Train/logs/ regardless of launch directory
+_V6_DIR = os.path.dirname(os.path.abspath(__file__))
 if master_process:
-    run_id = str(uuid.uuid4())
-    logdir = 'logs/%s/' % run_id
+    if args.exp_name:
+        logdir  = os.path.join(_V6_DIR, 'logs', args.exp_name)
+        logfile = os.path.join(logdir, 'log.txt')
+    else:
+        run_id  = str(uuid.uuid4())
+        logdir  = os.path.join(_V6_DIR, 'logs', run_id)
+        logfile = os.path.join(_V6_DIR, 'logs', '%s.txt' % run_id)
     os.makedirs(logdir, exist_ok=True)
-    logfile = 'logs/%s.txt' % run_id
     with open(logfile, "w") as f:
         f.write('='*100 + '\n')
         f.write(code)
@@ -442,7 +462,7 @@ for step in range(args.num_iterations + 1):
         torch.cuda.synchronize()
         training_time_ms += 1000*(time.time() - t0)
         log = dict(step=step, model=raw_model.state_dict())
-        torch.save(log, 'logs/%s/state_step%06d.pt' % (run_id, step))
+        torch.save(log, os.path.join(logdir, 'state_step%06d.pt' % step))
         torch.cuda.synchronize()
         t0 = time.time()
 
@@ -490,7 +510,7 @@ if master_process:
     plt.xlabel('Step')
     plt.ylabel('Training Loss')
     plt.title('Training Loss (Muon)')
-    plt.savefig('logs/%s/train_loss.png' % run_id)
+    plt.savefig(os.path.join(logdir, 'train_loss.png'))
 
     steps_v, losses_v = zip(*val_losses)
     plt.figure()
@@ -498,6 +518,6 @@ if master_process:
     plt.xlabel('Step')
     plt.ylabel('Validation Loss')
     plt.title('Validation Loss (Muon)')
-    plt.savefig('logs/%s/val_loss.png' % run_id)
+    plt.savefig(os.path.join(logdir, 'val_loss.png'))
 
 dist.destroy_process_group()

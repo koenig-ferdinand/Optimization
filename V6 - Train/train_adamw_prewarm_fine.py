@@ -444,11 +444,27 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
 
     # regularization loss (float32, outside autocast, adds to existing grads)
-    reg_loss_val = 0.0
+    # Measure grad norms before/after reg backward every val_loss_every steps
+    # to verify the reg gradient doesn't inflate the effective learning rate.
+    reg_loss_val  = 0.0
+    _task_gnorm   = 0.0
+    _total_gnorm  = 0.0
+    _log_gnorms   = _use_reg and master_process and (step % args.val_loss_every == 0 or last_step)
+
     if _use_reg:
+        if _log_gnorms:
+            with torch.no_grad():
+                _task_gnorm = float(sum(
+                    p.grad.norm()**2 for p in raw_model.parameters() if p.grad is not None
+                ) ** 0.5)
         _rl = compute_reg_loss(raw_model, _reg.reg_name, _reg.reg_lambda, _reg_matrices, _reg_layers)
         _rl.backward()
         reg_loss_val = _rl.item()
+        if _log_gnorms:
+            with torch.no_grad():
+                _total_gnorm = float(sum(
+                    p.grad.norm()**2 for p in raw_model.parameters() if p.grad is not None
+                ) ** 0.5)
 
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
@@ -461,6 +477,15 @@ for step in range(args.num_iterations + 1):
         print(f"step:{step+1}/{args.num_iterations} train_loss:{train_loss.item():.4f} reg_loss:{reg_loss_val:.2e} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms")
         with open(logfile, "a") as f:
             f.write(f"step:{step+1}/{args.num_iterations} train_loss:{train_loss.item():.4f} reg_loss:{reg_loss_val:.2e} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms\n")
+        if _log_gnorms and _task_gnorm > 0:
+            _gnorm_ratio = _total_gnorm / _task_gnorm   # ≈1.0 means reg is negligible
+            _msg = (f'  grad_norms step:{step+1} '
+                    f'task={_task_gnorm:.3e}  total={_total_gnorm:.3e}  '
+                    f'total/task={_gnorm_ratio:.4f}  '
+                    f'(reg adds {(_gnorm_ratio-1)*100:.2f}% to update magnitude)\n')
+            print(_msg.strip())
+            with open(logfile, 'a') as f:
+                f.write(_msg)
         train_losses.append((step+1, train_loss.item()))
 
 if master_process:

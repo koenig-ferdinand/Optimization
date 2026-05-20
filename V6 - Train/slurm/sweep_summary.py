@@ -95,8 +95,8 @@ adamw_steps = sorted(adamw_data.keys())
 muon_losses  = [muon_data[s]  for s in muon_steps]
 adamw_losses = [adamw_data[s] for s in adamw_steps]
 
-# Reference final losses — use step 3000 for sweep comparison (sweep ends there)
-SWEEP_END   = 3000
+# Reference final losses — set to 3000 for Phase 1 sweep, 6200 for Phase 2 full runs
+SWEEP_END   = 6200
 muon_final  = muon_data.get(SWEEP_END,  muon_losses[-1])
 adamw_final = adamw_data.get(SWEEP_END, adamw_losses[-1])
 muon_gap    = adamw_final - muon_final   # how much better Muon is at step 3000

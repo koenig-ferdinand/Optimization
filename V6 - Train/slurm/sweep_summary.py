@@ -31,8 +31,8 @@ LOG_ROOT   = os.path.join(V6_DIR, 'logs')
 OUT_DIR    = os.path.join(SCRIPT_DIR, 'results')
 os.makedirs(OUT_DIR, exist_ok=True)
 
-MUON_LOG  = os.path.join(V6_DIR, 'log_muon.txt')
-ADAMW_LOG = os.path.join(V6_DIR, 'log_adamw.txt')
+MUON_LOG  = os.path.join(V6_DIR, 'log_muon.txt')    # 6200-step baseline (fallback)
+ADAMW_LOG = os.path.join(V6_DIR, 'log_adamw.txt')   # 6200-step baseline (fallback)
 
 # ── Experiment definitions (must match sweep_config.py) ───────────────────────
 
@@ -87,41 +87,64 @@ def parse_exp_log(log_path):
 
 # ── Load baselines ────────────────────────────────────────────────────────────
 
-muon_data  = parse_baseline_log(MUON_LOG)
-adamw_data = parse_baseline_log(ADAMW_LOG)
+# Auto-select Muon baseline will happen after SWEEP_END is known (see below)
 
-muon_steps  = sorted(muon_data.keys())
-adamw_steps = sorted(adamw_data.keys())
+# Auto-detect SWEEP_END from the experiments in sweep_config.py.
+# Uses the most common num_iterations value (ignores reg_name='none' baselines).
+_reg_iters = [e['num_iterations'] for e in EXPERIMENTS if e.get('reg_name', 'none') != 'none']
+SWEEP_END  = max(set(_reg_iters), key=_reg_iters.count) if _reg_iters else 6200
+print(f'[INFO] Auto-detected SWEEP_END = {SWEEP_END}')
+
+# Auto-select AdamW baseline with matching schedule:
+#   ≤ 3000 iters → prefer log_adamw_3000.txt or logs/adamw_3000/log.txt
+#   > 3000 iters → prefer log_adamw_{SWEEP_END}.txt, fall back to log_adamw.txt
+_adamw_candidates = [
+    (os.path.join(V6_DIR,   f'log_adamw_{SWEEP_END}.txt'),      f'log_adamw_{SWEEP_END}.txt'),
+    (os.path.join(LOG_ROOT, f'adamw_{SWEEP_END}', 'log.txt'),   f'logs/adamw_{SWEEP_END}/log.txt'),
+    (ADAMW_LOG,                                                   'log_adamw.txt (6200-step fallback)'),
+]
+adamw_log_path, adamw_log_name = next(
+    ((p, n) for p, n in _adamw_candidates if os.path.exists(p)), (ADAMW_LOG, 'log_adamw.txt')
+)
+print(f'[INFO] AdamW baseline : {adamw_log_name}')
+adamw_data = parse_baseline_log(adamw_log_path)
+
+# Auto-select Muon baseline with matching schedule (same priority as AdamW)
+_muon_candidates = [
+    (os.path.join(V6_DIR,   f'log_muon_{SWEEP_END}.txt'),      f'log_muon_{SWEEP_END}.txt'),
+    (os.path.join(LOG_ROOT, f'muon_{SWEEP_END}', 'log.txt'),   f'logs/muon_{SWEEP_END}/log.txt'),
+    (MUON_LOG,                                                   'log_muon.txt (6200-step fallback)'),
+]
+muon_log_path, muon_log_name = next(
+    ((p, n) for p, n in _muon_candidates if os.path.exists(p)), (MUON_LOG, 'log_muon.txt')
+)
+print(f'[INFO] Muon  baseline : {muon_log_name}')
+muon_data = parse_baseline_log(muon_log_path)
+
+# ── Filter experiments by phase ───────────────────────────────────────────────
+# Phase 1 (SWEEP_END ≤ 3000): exclude full_* runs (they use a longer schedule)
+# Phase 2 (SWEEP_END > 3000): exclude non-full_* runs (they are short sweeps)
+if SWEEP_END <= 3000:
+    _before = len(EXPERIMENTS)
+    EXPERIMENTS = [e for e in EXPERIMENTS if not e['exp_name'].startswith('full_')]
+    _skip = _before - len(EXPERIMENTS)
+    if _skip:
+        print(f'[INFO] Phase 1 mode: skipped {_skip} full_* experiment(s)')
+else:
+    _before = len(EXPERIMENTS)
+    EXPERIMENTS = [e for e in EXPERIMENTS
+                   if e['exp_name'].startswith('full_') or e['reg_name'] == 'none']
+    _skip = _before - len(EXPERIMENTS)
+    if _skip:
+        print(f'[INFO] Phase 2 mode: skipped {_skip} non-full_* experiment(s)')
+
+muon_steps   = sorted(muon_data.keys())
+adamw_steps  = sorted(adamw_data.keys())
 muon_losses  = [muon_data[s]  for s in muon_steps]
 adamw_losses = [adamw_data[s] for s in adamw_steps]
 
-# Reference final losses — set to 3000 for Phase 1 sweep, 6200 for Phase 2 full runs
-SWEEP_END   = 3000
-
-# ── Same-schedule AdamW baseline (reg_name='none' experiment) ─────────────────
-# If an experiment with reg_name='none' exists in EXPERIMENTS, use it as the
-# AdamW comparison so the LR schedule matches the reg runs exactly.
-# Falls back to log_adamw.txt if no such experiment exists.
-
-_none_exp = next((e for e in EXPERIMENTS if e['reg_name'] == 'none'), None)
-_none_log = os.path.join(LOG_ROOT, _none_exp['exp_name'], 'log.txt') if _none_exp else None
-_none_steps, _none_losses, _, _none_missing = (
-    parse_exp_log(_none_log) if _none_log else ([], [], False, True)
-)
-_none_lut = dict(zip(_none_steps, _none_losses))
-
-# Use same-schedule baseline if available and complete, else fall back
-if _none_losses and not _none_missing:
-    adamw_same  = _none_lut
-    adamw_label = f'AdamW ({_none_exp["exp_name"]}, same schedule)'
-    print(f'[INFO] Using same-schedule AdamW baseline: {_none_exp["exp_name"]}')
-else:
-    adamw_same  = dict(zip(adamw_steps, adamw_losses))
-    adamw_label = 'AdamW (log_adamw.txt, 6200-step schedule)'
-    print(f'[INFO] No same-schedule AdamW found — using log_adamw.txt')
-
 muon_final  = muon_data.get(SWEEP_END,  muon_losses[-1])
-adamw_final = adamw_same.get(SWEEP_END, _none_losses[-1] if _none_losses else adamw_losses[-1])
+adamw_final = adamw_data.get(SWEEP_END, adamw_losses[-1])
 muon_gap    = adamw_final - muon_final
 
 
@@ -181,10 +204,10 @@ for r in sorted(results, key=lambda x: x['final_loss']):
           f'{r["last_step"]:>5}  {fl_s:>7}  {da_s:>7}  {dm_s:>7}  {gc_s:>6}  {status}')
 
 print('-' * 95)
-print(f'{"AdamW baseline (same schedule)":<{COL}} {"—":<16} {"—":>7}  {SWEEP_END:>5}  '
-      f'{adamw_final:>7.4f}  {"0.0000":>7}  {(-muon_gap):>7.4f}  {"0.0%":>6}  REF')
+print(f'{"AdamW baseline":<{COL}} {"—":<16} {"—":>7}  {SWEEP_END:>5}  '
+      f'{adamw_final:>7.4f}  {"0.0000":>7}  {(-muon_gap):>7.4f}  {"0.0%":>6}  REF  ← {adamw_log_name}')
 print(f'{"Muon baseline (target)":<{COL}} {"—":<16} {"—":>7}  {SWEEP_END:>5}  '
-      f'{muon_final:>7.4f}  {(-muon_gap):>7.4f}  {"0.0000":>7}  {"100.0%":>6}  TARGET')
+      f'{muon_final:>7.4f}  {(-muon_gap):>7.4f}  {"0.0000":>7}  {"100.0%":>6}  TARGET  ← {muon_log_name}')
 print('=' * 95)
 
 
@@ -192,7 +215,7 @@ print('=' * 95)
 
 # Lookups: {step: loss}
 _traj     = {r['exp_name']: dict(zip(r['steps'], r['losses'])) for r in results}
-_adamw_lut = adamw_same   # same-schedule baseline if available, else log_adamw.txt
+_adamw_lut = dict(zip(adamw_steps, adamw_losses))
 _muon_lut  = dict(zip(muon_steps,  muon_losses))
 
 # All 100-step checkpoints that appear in any experiment's log

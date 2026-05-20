@@ -61,15 +61,19 @@ EXPERIMENTS = [
     # dict(exp_name='deadsv_lam1e-5',  reg_name='dead_sv',        reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
     # dict(exp_name='deadsv_lam1e-4',  reg_name='dead_sv',        reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
 
-    # ── Phase 2: full runs with best λ per regularizer (6200 iter) ───────────
-    # Best λ determined from Phase 1 sweep results (sweep_summary.py).
-    # Ranked by gap closed at step 3000:
-    #   sv_variance  λ=5e-4  → 103.8%   orthogonal  λ=1e-5  → 103.2%
-    #   isometry     λ=1e-5  → 102.3%   dead_sv     λ=1e-5  → 101.2%
-    #   stable_rank  λ=1e-5  → 100.5%   eff_rank    λ=5e-5  →  99.3%
-    # Time estimate: 6 runs × ~200 min = ~20 h  (fits within 30 h wall time)
+    # ── Phase 1 baseline — AdamW with same 3000-step schedule ────────────────
+    # Run this once to get a fair comparison baseline for all Phase 1 reg runs.
+    # After this finishes, sweep_summary.py will automatically use it instead
+    # of log_adamw.txt (which used a 6200-step schedule).
 
-    dict(exp_name='full_sv_var',    reg_name='sv_variance',    reg_lambda=5e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
-    dict(exp_name='full_orth',      reg_name='orthogonal',     reg_lambda=1e-5, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
+    dict(exp_name='adamw_3000', reg_name='none', reg_lambda=0.0, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+
+    # ── Phase 2: full runs with best λ per regularizer (6200 iter) ───────────
+    # Always include a same-schedule AdamW baseline first so the comparison
+    # is fair (same num_iterations = same LR decay schedule as reg runs).
+
+    # dict(exp_name='adamw_6200',     reg_name='none',           reg_lambda=0.0,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
+    # dict(exp_name='full_sv_var',    reg_name='sv_variance',    reg_lambda=5e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
+    # dict(exp_name='full_orth',      reg_name='orthogonal',     reg_lambda=1e-5, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
 
 ]

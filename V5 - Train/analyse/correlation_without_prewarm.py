@@ -343,7 +343,7 @@ def plot_metric_summary(corr):
     ax.invert_yaxis()
     fig.tight_layout()
 
-    out = os.path.join(OUTPUT_DIR, 'correlation_summary_without_prewarm.png')
+    out = os.path.join(OUTPUT_DIR, 'correlation_summary_without_prewarm2.png')
     fig.savefig(out, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f'  → {out}')

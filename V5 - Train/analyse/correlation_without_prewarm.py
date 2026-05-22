@@ -56,7 +56,6 @@ ALL_METRICS = [
     'spectral_norm',
     'nuclear_norm',
     'alpha',
-    'alpha_clauset',
     'energy_k',
 ]
 
@@ -67,7 +66,6 @@ METRIC_LABELS = {
     'spectral_norm':      'Spectral Norm',
     'nuclear_norm':       'Nuclear Norm',
     'alpha':              'Power-law α (regression)',
-    'alpha_clauset':      'Power-law α (Clauset MLE)',
     'energy_k':           'Cumulative Energy (k)',
 }
 

@@ -57,10 +57,6 @@ ALL_METRICS = [
     'nuclear_norm',
     'alpha',
     'alpha_clauset',
-    'mp_signal_fraction',
-    'update_magnitude',
-    'effective_step_size',
-    'subspace_drift',
     'energy_k',
 ]
 
@@ -72,10 +68,6 @@ METRIC_LABELS = {
     'nuclear_norm':       'Nuclear Norm',
     'alpha':              'Power-law α (regression)',
     'alpha_clauset':      'Power-law α (Clauset MLE)',
-    'mp_signal_fraction': 'MP Signal Fraction',
-    'update_magnitude':   'Update Magnitude',
-    'effective_step_size':'Effective Step Size',
-    'subspace_drift':     'Subspace Drift (°)',
     'energy_k':           'Cumulative Energy (k)',
 }
 

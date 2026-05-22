@@ -21,6 +21,42 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from reg_functions import compute_reg_loss
 
 
+def flatten_gradient_spectrum(model, strength, matrices, layers):
+    """Partially flatten the singular value spectrum of gradients for 2D weight matrices.
+
+    strength=0.0 → no change (pure AdamW gradient)
+    strength=1.0 → fully equalised singular values (Muon-like update)
+    strength=0.5 → interpolation between the two
+
+    Only applied to matrices matching the matrices/layers filter (same as reg_matrices).
+    Scale is preserved so the overall gradient magnitude stays the same.
+    """
+    if strength <= 0.0:
+        return
+    for name, p in model.named_parameters():
+        if p.grad is None or p.grad.dim() != 2:
+            continue
+        if not any(m in name for m in matrices):
+            continue
+        if layers != 'all':
+            # extract layer index from name, e.g. 'transformer.h.4.mlp.c_fc.weight'
+            parts = name.split('.')
+            try:
+                layer_idx = int(parts[parts.index('h') + 1])
+            except (ValueError, IndexError):
+                continue
+            if layer_idx not in layers:
+                continue
+        g = p.grad.float()
+        try:
+            U, S, Vh = torch.linalg.svd(g, full_matrices=False)
+            S_flat = S ** (1.0 - strength)                      # flatten spectrum
+            S_flat = S_flat * (S.mean() / S_flat.mean().clamp(min=1e-8))  # preserve scale
+            p.grad = (U @ torch.diag(S_flat) @ Vh).to(p.grad.dtype)
+        except Exception:
+            pass  # skip if SVD fails (e.g. NaN grads)
+
+
 # -----------------------------------------------------------------------------
 # NOTE: This is the AdamW-only baseline. The Muon optimizer is NOT used here.
 # All parameters (transformer blocks + lm_head) are trained with AdamW.
@@ -267,17 +303,29 @@ _p.add_argument('--reg_lambda',     type=float, default=0.0)
 _p.add_argument('--reg_matrices',   type=str,   default='mlp.c_proj,mlp.c_fc')
 _p.add_argument('--reg_layers',     type=str,   default='all')
 _p.add_argument('--num_iterations', type=int,   default=args.num_iterations)
-_p.add_argument('--save_every',     type=int,   default=args.save_every)
-_p.add_argument('--early_stop',     action='store_true')
+_p.add_argument('--save_every',              type=int,   default=args.save_every)
+_p.add_argument('--early_stop',              action='store_true')
+_p.add_argument('--grad_flatten_strength',   type=float, default=0.0,
+                help='Gradient spectrum flattening: 0=AdamW, 1=Muon-like (default: 0)')
+_p.add_argument('--grad_balance_ratio',      type=float, default=0.0,
+                help='Scale reg gradient so its norm = ratio × task gradient norm. '
+                     '0=disabled, 0.1=reg is 10%% of task (default: 0)')
+_p.add_argument('--weight_proj_strength',    type=float, default=0.0,
+                help='Post-update weight projection strength: flatten SV spectrum '
+                     'of weight matrices after each optimizer step. '
+                     '0=disabled, 1=fully flat (default: 0)')
 _reg = _p.parse_args()
 
 # Apply overrides from CLI
 args.num_iterations = _reg.num_iterations
 args.save_every     = _reg.save_every
 
-_use_reg         = (_reg.reg_name != 'none') and (_reg.reg_lambda > 0.0)
-_reg_matrices    = [m.strip() for m in _reg.reg_matrices.split(',')]
-_reg_layers      = 'all' if _reg.reg_layers == 'all' else [int(x) for x in _reg.reg_layers.split(',')]
+_use_reg              = (_reg.reg_name != 'none') and (_reg.reg_lambda > 0.0)
+_grad_flatten         = _reg.grad_flatten_strength
+_grad_balance_ratio   = _reg.grad_balance_ratio
+_weight_proj_strength = _reg.weight_proj_strength
+_reg_matrices         = [m.strip() for m in _reg.reg_matrices.split(',')]
+_reg_layers           = 'all' if _reg.reg_layers == 'all' else [int(x) for x in _reg.reg_layers.split(',')]
 
 # V6 AdamW baseline thresholds for early stopping (from log_adamw.txt)
 _BASELINE  = {500: 4.3320, 1000: 3.9219, 1500: 3.7637, 2000: 3.6796, 2500: 3.6297, 3000: 3.5881}
@@ -443,23 +491,62 @@ for step in range(args.num_iterations + 1):
     for p in model.parameters():
         p.grad /= train_accumulation_steps
 
+    # gradient spectrum flattening (optional, strength=0 → disabled, no overhead)
+    if _grad_flatten > 0.0:
+        flatten_gradient_spectrum(raw_model, _grad_flatten, _reg_matrices, _reg_layers)
+
     # regularization loss (float32, outside autocast, adds to existing grads)
-    # Measure grad norms before/after reg backward every val_loss_every steps
-    # to verify the reg gradient doesn't inflate the effective learning rate.
+    # Supports three modes:
+    #   normal          : reg gradient added directly (original behaviour)
+    #   grad_balance    : reg gradient scaled so its norm = ratio × task norm
+    #   logging only    : measure norms every val_loss_every steps
     reg_loss_val  = 0.0
     _task_gnorm   = 0.0
     _total_gnorm  = 0.0
     _log_gnorms   = _use_reg and master_process and (step % args.val_loss_every == 0 or last_step)
 
     if _use_reg:
-        if _log_gnorms:
+        # Always measure task grad norm when balancing; also when logging
+        _need_task_norm = _grad_balance_ratio > 0.0 or _log_gnorms
+        if _need_task_norm:
             with torch.no_grad():
                 _task_gnorm = float(sum(
                     p.grad.norm()**2 for p in raw_model.parameters() if p.grad is not None
                 ) ** 0.5)
-        _rl = compute_reg_loss(raw_model, _reg.reg_name, _reg.reg_lambda, _reg_matrices, _reg_layers)
-        _rl.backward()
-        reg_loss_val = _rl.item()
+
+        if _grad_balance_ratio > 0.0:
+            # ── Gradient balancing: separate backward, then scale ────────────
+            # Save task gradients for reg-target parameters only (saves memory)
+            _saved = {n: p.grad.clone()
+                      for n, p in raw_model.named_parameters()
+                      if p.grad is not None and any(m in n for m in _reg_matrices)}
+            # Zero only those params, compute isolated reg gradient
+            for n, p in raw_model.named_parameters():
+                if any(m in n for m in _reg_matrices) and p.grad is not None:
+                    p.grad.zero_()
+            _rl = compute_reg_loss(raw_model, _reg.reg_name, 1.0,   # lam=1: scale manually
+                                   _reg_matrices, _reg_layers)
+            _rl.backward()
+            reg_loss_val = _rl.item()
+            with torch.no_grad():
+                _reg_gnorm = float(sum(
+                    p.grad.norm()**2 for n, p in raw_model.named_parameters()
+                    if p.grad is not None and any(m in n for m in _reg_matrices)
+                ) ** 0.5)
+            # Scale reg gradient so its norm = ratio × task norm
+            _scale = (_grad_balance_ratio * _task_gnorm) / max(_reg_gnorm, 1e-8)
+            for n, p in raw_model.named_parameters():
+                if p.grad is not None and any(m in n for m in _reg_matrices):
+                    p.grad = _saved.get(n, torch.zeros_like(p.grad)) + _scale * p.grad
+                elif n in _saved:
+                    p.grad = _saved[n]
+        else:
+            # ── Normal mode: add reg gradient directly ───────────────────────
+            _rl = compute_reg_loss(raw_model, _reg.reg_name, _reg.reg_lambda,
+                                   _reg_matrices, _reg_layers)
+            _rl.backward()
+            reg_loss_val = _rl.item()
+
         if _log_gnorms:
             with torch.no_grad():
                 _total_gnorm = float(sum(
@@ -469,6 +556,31 @@ for step in range(args.num_iterations + 1):
     for opt, sched in zip(optimizers, schedulers):
         opt.step()
         sched.step()
+
+    # ── Post-update weight projection (option 4) ─────────────────────────────
+    # Directly flattens the SV spectrum of weight matrices after each AdamW step.
+    # Unlike gflat (gradient-space), this bypasses v_t entirely.
+    if _weight_proj_strength > 0.0 and master_process:
+        with torch.no_grad():
+            for name, p in raw_model.named_parameters():
+                if p.dim() != 2 or not any(m in name for m in _reg_matrices):
+                    continue
+                if _reg_layers != 'all':
+                    parts = name.split('.')
+                    try:
+                        li = int(parts[parts.index('h') + 1])
+                    except (ValueError, IndexError):
+                        continue
+                    if li not in _reg_layers:
+                        continue
+                try:
+                    U, S, Vh = torch.linalg.svd(p.float(), full_matrices=False)
+                    S_flat = S ** (1.0 - _weight_proj_strength)
+                    S_flat = S_flat * (S.mean() / S_flat.mean().clamp(min=1e-8))
+                    p.copy_((U @ torch.diag(S_flat) @ Vh).to(p.dtype))
+                except Exception:
+                    pass
+
     model.zero_grad(set_to_none=True)
     # --------------- TRAINING SECTION END -------------------
 

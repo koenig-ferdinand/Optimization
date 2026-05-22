@@ -68,6 +68,44 @@ EXPERIMENTS = [
 
     dict(exp_name='adamw_3000', reg_name='none', reg_lambda=0.0, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100,   early_stop=False),
 
+    # ── Phase 3: gradient spectrum flattening sweep (3000 iter) ──────────────
+    # Tests whether equalising gradient singular values (like Muon does) closes
+    # the early-convergence gap. strength=0 → AdamW, strength=1 → Muon-like.
+    # Baseline: adamw_3000 (strength=0). Target: muon_3000.
+
+    dict(exp_name='gflat_25',  reg_name='none', reg_lambda=0.0, grad_flatten_strength=0.25, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='gflat_50',  reg_name='none', reg_lambda=0.0, grad_flatten_strength=0.50, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='gflat_75',  reg_name='none', reg_lambda=0.0, grad_flatten_strength=0.75, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='gflat_100', reg_name='none', reg_lambda=0.0, grad_flatten_strength=1.00, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+
+    # ── Phase 3b: high-λ sv_variance (Phase 1 trend was monotone, push further) ─
+    # Phase 1 best was λ=5e-4. Try higher to see if trend continues or diverges.
+    # early_stop=True catches divergence automatically.
+    dict(exp_name='sv_var_lam1e-3', reg_name='sv_variance', reg_lambda=1e-3, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='sv_var_lam3e-3', reg_name='sv_variance', reg_lambda=3e-3, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='sv_var_lam1e-2', reg_name='sv_variance', reg_lambda=1e-2, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+
+    # ── Phase 4: four new methods (3000 iter) ────────────────────────────────
+    # 4a. Dynamic sv_variance — self-amplifying lambda, gradient stays large
+    #     even when variance collapses. Same λ range as Phase 1 for comparison.
+    # dict(exp_name='dyn_sv_lam1e-4', reg_name='dynamic_sv_variance', reg_lambda=1e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    # dict(exp_name='dyn_sv_lam1e-3', reg_name='dynamic_sv_variance', reg_lambda=1e-3, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+
+    # 4b. Log effective rank — log-barrier keeps gradient large near optimum.
+    # dict(exp_name='log_effrank_lam1e-4', reg_name='log_effective_rank', reg_lambda=1e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    # dict(exp_name='log_effrank_lam1e-3', reg_name='log_effective_rank', reg_lambda=1e-3, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+
+    # 4c. Gradient balancing — reg gradient scaled to fixed % of task gradient.
+    #     ratio=0.05 means reg contributes exactly 5% of update magnitude.
+    # dict(exp_name='gbal_5pct',  reg_name='sv_variance', reg_lambda=1.0, grad_balance_ratio=0.05, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    # dict(exp_name='gbal_10pct', reg_name='sv_variance', reg_lambda=1.0, grad_balance_ratio=0.10, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+
+    # 4d. Post-update weight projection — directly flattens SV spectrum of
+    #     weights after each AdamW step, bypassing v_t entirely.
+    # dict(exp_name='wproj_01', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.01, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    # dict(exp_name='wproj_05', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.05, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    # dict(exp_name='wproj_10', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.10, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+
     # ── Phase 2: full runs with best λ per regularizer (6200 iter) ───────────
     # sweep_summary.py will auto-use log_adamw_{SWEEP_END}.txt as the baseline.
     # Before running Phase 2: copy logs/adamw_3000/log.txt → log_adamw_3000.txt,

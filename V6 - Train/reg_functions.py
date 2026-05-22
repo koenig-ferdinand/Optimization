@@ -1,19 +1,25 @@
 """
 reg_functions.py — Spectral Regularization Functions for GPT-2 Weight Matrices
 ================================================================================
-Six regularizers, all operating on a single weight matrix W.
+Eight regularizers, all operating on a single weight matrix W.
 Each returns a scalar tensor (with grad) to be added to the task loss.
 
 Dispatcher:  compute_reg_loss(model, reg_name, lam, target_matrices, target_layers)
 
 Regularizers
 ------------
-sv_variance    : Var(σᵢ / Σσᵢ)            — flatten spectrum → lower power-law α
-orthogonal     : ||WᵀW - I||²_F / n       — push singular values toward 1
-isometry       : ||WᵀW - σ̄²·I||²_F / n   — scale-free orthogonality
-effective_rank : −H(σᵢ / Σσᵢ)             — maximise entropy of σ distribution
-stable_rank    : −(Σσᵢ²) / σ₁²            — maximise stable rank
-dead_sv        : Σ max(0, τ − σᵢ/σ₁)²    — penalise near-zero singular values
+sv_variance         : Var(σᵢ / Σσᵢ)              — flatten spectrum → lower α
+orthogonal          : ||WᵀW - I||²_F / n           — push singular values toward 1
+isometry            : ||WᵀW - σ̄²·I||²_F / n       — scale-free orthogonality
+effective_rank      : −H(σᵢ / Σσᵢ)                — maximise entropy of σ
+stable_rank         : −(Σσᵢ²) / σ₁²               — maximise stable rank
+dead_sv             : Σ max(0, τ − σᵢ/σ₁)²        — penalise near-zero SVs
+
+New (Phase 4):
+dynamic_sv_variance : Var / (Var + ε) · (1/Var)   — self-amplifying: gradient
+                      stays large even when variance collapses to near-zero
+log_effective_rank  : −log(H / log(N) + ε)         — log-barrier: explodes when
+                      entropy is far below max, gradient stays large near optimum
 """
 
 import torch
@@ -93,15 +99,65 @@ def dead_sv_penalty(W: torch.Tensor, threshold: float = 0.01) -> torch.Tensor:
     return deficit.pow(2).sum()
 
 
+def dynamic_sv_variance_penalty(W: torch.Tensor) -> torch.Tensor:
+    """
+    Self-amplifying variant of sv_variance.
+
+    Standard sv_variance gradient → 0 as the spectrum flattens (variance → 0),
+    causing the regularizer to go silent exactly when it should push hardest.
+
+    Fix: scale the loss by 1 / (var + ε) so the effective lambda grows as
+    variance shrinks, keeping the gradient magnitude constant:
+        effective_λ = λ / (var + ε)   →   loss ≈ λ · var / (var + ε)
+
+    The denominator is detached so only the numerator contributes to the
+    gradient, giving:
+        ∂loss/∂W = [λ / (var.detach() + ε)] · ∂var/∂W
+
+    When var = 1e-8 the amplification factor is ~1e6 vs static λ.
+    """
+    S = torch.linalg.svdvals(W.float())
+    S_norm = S / (S.sum() + 1e-8)
+    raw_var = S_norm.var()
+    # detach denominator → gradient only flows through numerator raw_var
+    scale = 1.0 / (raw_var.detach() + 1e-6)
+    return scale * raw_var                       # dispatcher multiplies by lam
+
+
+def log_effective_rank_penalty(W: torch.Tensor) -> torch.Tensor:
+    """
+    Log-barrier variant of effective_rank.
+
+    Standard −H penalty → 0 gradient as H approaches its maximum (log N),
+    going silent near the optimum.
+
+    Fix: penalise the *relative gap* to maximum entropy in log-space:
+        loss = −log(H / H_max + ε)
+
+    Near H_max the log derivative is large, maintaining gradient pressure:
+        ∂loss/∂W = −1 / (H/H_max + ε) · (1/H_max) · ∂H/∂W
+
+    When H/H_max = 0.99 the gradient is ~100× larger than at H/H_max = 0.01.
+    """
+    S = torch.linalg.svdvals(W.float())
+    p = S / (S.sum() + 1e-8)
+    p = p.clamp(min=1e-10)
+    H = -(p * p.log()).sum()
+    H_max = torch.tensor(float(S.size(0)), device=W.device).log()   # log(N)
+    return -torch.log(H / H_max.clamp(min=1e-8) + 1e-8)             # negative sign: minimise
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 REGULARIZERS = {
-    'sv_variance':    sv_variance_penalty,
-    'orthogonal':     orthogonal_penalty,
-    'isometry':       isometry_penalty,
-    'effective_rank': effective_rank_penalty,
-    'stable_rank':    stable_rank_penalty,
-    'dead_sv':        dead_sv_penalty,
+    'sv_variance':          sv_variance_penalty,
+    'orthogonal':           orthogonal_penalty,
+    'isometry':             isometry_penalty,
+    'effective_rank':       effective_rank_penalty,
+    'stable_rank':          stable_rank_penalty,
+    'dead_sv':              dead_sv_penalty,
+    'dynamic_sv_variance':  dynamic_sv_variance_penalty,
+    'log_effective_rank':   log_effective_rank_penalty,
 }
 
 

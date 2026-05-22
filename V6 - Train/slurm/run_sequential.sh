@@ -26,7 +26,7 @@
 #SBATCH --account=es_he
 #SBATCH --output=/cluster/scratch/leochen/Muon/V4/slurm_logs/sequential_%j.out
 #SBATCH --error=/cluster/scratch/leochen/Muon/V4/slurm_logs/sequential_%j.err
-#SBATCH --time=20:00:00          # 20 h wall time  (18 sweeps × ~50 min + buffer)
+#SBATCH --time=08:00:00          # 8 h wall time   (7 runs × ~50 min + buffer)
                                  # Change to 07:00:00 for 3 full runs
 #SBATCH --ntasks=1               # 4 MPI ranks = 4 GPU processes
 #SBATCH --ntasks-per-node=1
@@ -55,6 +55,14 @@ conda activate muon
 PROJECT_ROOT="/cluster/scratch/leochen/Muon/V4"
 export V6_DIR="$PROJECT_ROOT/V6 - Train"   # exported so Python heredoc can read it
 
+# ── Experiment slice (1-based, inclusive) ─────────────────────────────────────
+# Set these to run only a subset of EXPERIMENTS from sweep_config.py.
+# Example: SLICE_START=3 SLICE_END=6 runs experiments 3,4,5,6.
+# Leave as 0 to run all experiments.
+SLICE_START=0
+SLICE_END=0
+export SLICE_START SLICE_END
+
 echo "Project root : $PROJECT_ROOT"
 echo "V6 dir       : $V6_DIR"
 echo "Job ID       : $SLURM_JOB_ID"
@@ -67,12 +75,20 @@ cd "$PROJECT_ROOT"    # torchrun data paths (data/fineweb10B/) are relative to V
 # Read experiments from sweep_config.py and run them one by one
 # =============================================================================
 
-python3 - <<'PYEOF'
+python3 - <<PYEOF
 import subprocess, sys, os, time
 
 # Load experiment list from sweep_config.py
 sys.path.insert(0, os.environ.get('V6_DIR', 'V6 - Train'))
 from sweep_config import EXPERIMENTS
+
+# Apply slice (1-based, inclusive). SLICE_START=0 means run all.
+_start = int(os.environ.get('SLICE_START', '0'))
+_end   = int(os.environ.get('SLICE_END',   '0'))
+if _start > 0:
+    EXPERIMENTS = EXPERIMENTS[_start-1 : _end if _end > 0 else None]
+    print(f'[INFO] Running experiments {_start}–{_end if _end > 0 else len(EXPERIMENTS)+_start-1} '
+          f'({len(EXPERIMENTS)} total)', flush=True)
 
 v6_dir    = os.environ.get('V6_DIR', 'V6 - Train')
 train_script = os.path.join(v6_dir, 'train_adamw_prewarm_fine.py')
@@ -100,6 +116,12 @@ for idx, exp in enumerate(EXPERIMENTS, 1):
         '--num_iterations', str(exp['num_iterations']),
         '--save_every',     str(exp['save_every']),
     ]
+    if exp.get('grad_flatten_strength', 0.0) > 0.0:
+        cmd += ['--grad_flatten_strength', str(exp['grad_flatten_strength'])]
+    if exp.get('grad_balance_ratio', 0.0) > 0.0:
+        cmd += ['--grad_balance_ratio', str(exp['grad_balance_ratio'])]
+    if exp.get('weight_proj_strength', 0.0) > 0.0:
+        cmd += ['--weight_proj_strength', str(exp['weight_proj_strength'])]
     if exp.get('early_stop', False):
         cmd.append('--early_stop')
 

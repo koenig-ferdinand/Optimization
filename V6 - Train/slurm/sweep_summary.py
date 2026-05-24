@@ -37,7 +37,7 @@ ADAMW_LOG = os.path.join(V6_DIR, 'log_adamw.txt')   # 6200-step baseline (fallba
 # ── Experiment definitions (must match sweep_config.py) ───────────────────────
 
 sys.path.insert(0, V6_DIR)
-from sweep_config import EXPERIMENTS
+from sweep_config import EXPERIMENTS, HYBRID_EXPERIMENTS
 
 REG_COLORS = {
     'none':           'black',
@@ -47,6 +47,7 @@ REG_COLORS = {
     'stable_rank':    '#d62728',
     'isometry':       '#9467bd',
     'dead_sv':        '#8c564b',
+    'hybrid':         '#17becf',    # teal — layer-specific Muon substitution
 }
 
 
@@ -72,16 +73,22 @@ def parse_exp_log(log_path):
     Returns (steps, val_losses, early_stopped, missing)."""
     steps, losses = [], []
     early_stopped = False
+    num_iterations = None
     if not os.path.exists(log_path):
         return steps, losses, False, True   # missing
     with open(log_path) as f:
         for line in f:
-            m = re.search(r'step:(\d+)/\d+ val_loss:([\d.]+)', line)
+            m = re.search(r'step:(\d+)/(\d+) val_loss:([\d.]+)', line)
             if m:
                 steps.append(int(m.group(1)))
-                losses.append(float(m.group(2)))
+                num_iterations = int(m.group(2))
+                losses.append(float(m.group(3)))
             if 'EARLY_STOP' in line:
                 early_stopped = True
+    # If the last logged step equals num_iterations the run completed fully —
+    # ignore any EARLY_STOP lines (log contamination from old test runs)
+    if steps and num_iterations and steps[-1] >= num_iterations:
+        early_stopped = False
     return steps, losses, early_stopped, False
 
 
@@ -90,9 +97,12 @@ def parse_exp_log(log_path):
 # Auto-select Muon baseline will happen after SWEEP_END is known (see below)
 
 # Auto-detect SWEEP_END from the experiments in sweep_config.py.
-# Uses the most common num_iterations value (ignores reg_name='none' baselines).
-_reg_iters = [e['num_iterations'] for e in EXPERIMENTS if e.get('reg_name', 'none') != 'none']
-SWEEP_END  = max(set(_reg_iters), key=_reg_iters.count) if _reg_iters else 6200
+# Uses the most common num_iterations across ALL active experiments
+# (including reg_name='none' runs like gflat, weight_proj, etc.)
+# Excludes pure AdamW/Muon baselines (exp_name starts with 'adamw_' or 'muon_').
+_all_iters = [e['num_iterations'] for e in EXPERIMENTS
+              if not e['exp_name'].startswith(('adamw_', 'muon_'))]
+SWEEP_END  = max(set(_all_iters), key=_all_iters.count) if _all_iters else 6200
 print(f'[INFO] Auto-detected SWEEP_END = {SWEEP_END}')
 
 # Auto-select AdamW baseline with matching schedule:
@@ -178,6 +188,36 @@ for exp in EXPERIMENTS:
     })
 
 
+# ── Load hybrid experiment results ───────────────────────────────────────────
+
+for hexp in HYBRID_EXPERIMENTS:
+    name     = hexp['exp_name']
+    log_path = os.path.join(LOG_ROOT, name, 'log.txt')
+    steps, losses, early_stopped, missing = parse_exp_log(log_path)
+
+    fl    = losses[-1] if losses else float('nan')
+    ls    = steps[-1]  if steps  else 0
+    d_adamw = fl - adamw_final if not np.isnan(fl) else float('nan')
+    d_muon  = fl - muon_final  if not np.isnan(fl) else float('nan')
+    gap_closed = (d_adamw / muon_gap * -100) if (not np.isnan(d_adamw) and muon_gap > 0) else float('nan')
+
+    results.append({
+        'exp_name':      name,
+        'reg_name':      'hybrid',
+        'lam':           0.0,
+        'steps':         steps,
+        'losses':        losses,
+        'final_loss':    fl,
+        'last_step':     ls,
+        'd_adamw':       d_adamw,
+        'd_muon':        d_muon,
+        'gap_closed':    gap_closed,
+        'early_stopped': early_stopped,
+        'missing':       missing,
+        '_description':  hexp.get('description', name),
+    })
+
+
 # ── Console table ─────────────────────────────────────────────────────────────
 
 COL = 34
@@ -200,8 +240,14 @@ for r in sorted(results, key=lambda x: x['final_loss']):
     da_s  = f'{r["d_adamw"]:+.4f}'   if not np.isnan(r['d_adamw'])   else '  —'
     dm_s  = f'{r["d_muon"]:+.4f}'    if not np.isnan(r['d_muon'])    else '  —'
     gc_s  = f'{r["gap_closed"]:+.1f}%' if not np.isnan(r['gap_closed']) else '  —'
-    print(f'{r["exp_name"]:<{COL}} {r["reg_name"]:<16} {r["lam"]:>7.0e}  '
-          f'{r["last_step"]:>5}  {fl_s:>7}  {da_s:>7}  {dm_s:>7}  {gc_s:>6}  {status}')
+    # For hybrid entries, show description instead of raw λ column
+    if r['reg_name'] == 'hybrid':
+        desc = r.get('_description', r['exp_name'])
+        print(f'{r["exp_name"]:<{COL}} {"hybrid":<16} {desc:>7}  '
+              f'{r["last_step"]:>5}  {fl_s:>7}  {da_s:>7}  {dm_s:>7}  {gc_s:>6}  {status}')
+    else:
+        print(f'{r["exp_name"]:<{COL}} {r["reg_name"]:<16} {r["lam"]:>7.0e}  '
+              f'{r["last_step"]:>5}  {fl_s:>7}  {da_s:>7}  {dm_s:>7}  {gc_s:>6}  {status}')
 
 print('-' * 95)
 print(f'{"AdamW baseline":<{COL}} {"—":<16} {"—":>7}  {SWEEP_END:>5}  '
@@ -267,7 +313,11 @@ for r in results:          # keep original EXPERIMENTS order
         print(f'\n  ── {cur_reg} ──')
 
     status_tag = '  [STOPPED]' if r['early_stopped'] else ('  [MISSING]' if r['missing'] else '')
-    print(f'\n  {r["exp_name"]}  ·  λ={r["lam"]:.0e}{status_tag}')
+    if r['reg_name'] == 'hybrid':
+        desc = r.get('_description', r['exp_name'])
+        print(f'\n  {r["exp_name"]}  ·  {desc}{status_tag}')
+    else:
+        print(f'\n  {r["exp_name"]}  ·  λ={r["lam"]:.0e}{status_tag}')
 
     tokens = _traj_rows(lut, r['exp_name'], _adamw_lut, _all_steps)
     if not tokens:

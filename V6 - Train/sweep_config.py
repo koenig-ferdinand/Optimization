@@ -115,3 +115,75 @@ EXPERIMENTS = [
     # dict(exp_name='full_orth',      reg_name='orthogonal',     reg_lambda=1e-5, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=6200, save_every=100, early_stop=False),
 
 ]
+
+
+# =============================================================================
+# HYBRID_EXPERIMENTS  —  Layer-specific Muon substitution (train_hybrid.py)
+# =============================================================================
+#
+# These experiments split parameters: selected layers/matrices → Muon,
+# everything else → AdamW.  They are run via slurm/run_hybrid.sh, NOT via
+# run_sequential.sh (which uses train_adamw_prewarm_fine.py).
+#
+# sweep_summary.py reads this list separately and adds the results to the table.
+#
+# Fields
+# ------
+# exp_name       Log directory: V6 - Train/logs/{exp_name}/log.txt
+# muon_layers    'all'  or  comma-separated layer indices, e.g. '0,1,2'
+# muon_matrices  'all'  or  comma-separated matrix names, e.g. 'mlp.c_fc'
+# num_iterations Match the sweep baselines (3000)
+# description    Short label shown in sweep_summary table
+# =============================================================================
+
+HYBRID_EXPERIMENTS = [
+
+    # ── Job 1: Layer depth sweep (all 4 matrix types → Muon) ─────────────────
+    # Question: do early layers, late layers, or all layers drive Muon's advantage?
+    # GPT-2 has 12 transformer layers (0–11).
+
+    # 1 — First layer only
+    dict(exp_name='hybrid_first1', muon_layers='0',         muon_matrices='all', num_iterations=3000,
+         description='Muon layer 0'),
+
+    # 2 — First 3 layers (first quarter)
+    dict(exp_name='hybrid_first3', muon_layers='0,1,2',     muon_matrices='all', num_iterations=3000,
+         description='Muon layers 0-2'),
+
+    # 3 — First half (layers 0–5)
+    dict(exp_name='hybrid_first6', muon_layers='0,1,2,3,4,5', muon_matrices='all', num_iterations=3000,
+         description='Muon layers 0-5 (first half)'),
+
+    # 4 — Second half (layers 6–11)
+    dict(exp_name='hybrid_last6',  muon_layers='6,7,8,9,10,11', muon_matrices='all', num_iterations=3000,
+         description='Muon layers 6-11 (second half)'),
+
+    # 5 — Last 3 layers (last quarter)
+    dict(exp_name='hybrid_last3',  muon_layers='9,10,11',   muon_matrices='all', num_iterations=3000,
+         description='Muon layers 9-11'),
+
+    # ── Job 2: Matrix type sweep (all 12 layers, vary which matrices get Muon) ─
+    # Question: which weight matrix type drives Muon's advantage?
+    # Per block: mlp.c_fc (up-proj), mlp.c_proj (down-proj),
+    #            attn.c_attn (Q/K/V), attn.c_proj (out-proj)
+
+    # 6 — Both MLP projections, all layers
+    dict(exp_name='hybrid_mlp',      muon_layers='all', muon_matrices='mlp.c_fc,mlp.c_proj',       num_iterations=3000,
+         description='Muon MLP (c_fc+c_proj)'),
+
+    # 7 — Both attention projections, all layers
+    dict(exp_name='hybrid_attn',     muon_layers='all', muon_matrices='attn.c_attn,attn.c_proj',   num_iterations=3000,
+         description='Muon Attn (c_attn+c_proj)'),
+
+    # 8 — MLP up-projection only (largest MLP matrix, most effect on hidden state)
+    dict(exp_name='hybrid_cfc',      muon_layers='all', muon_matrices='mlp.c_fc',                  num_iterations=3000,
+         description='Muon mlp.c_fc only'),
+
+    # 9 — MLP down-projection only (projects back to residual stream)
+    dict(exp_name='hybrid_cproj',    muon_layers='all', muon_matrices='mlp.c_proj',                num_iterations=3000,
+         description='Muon mlp.c_proj only'),
+
+    # 10 — Attention output projection only (writes back to residual stream)
+    dict(exp_name='hybrid_attn_out', muon_layers='all', muon_matrices='attn.c_proj',               num_iterations=3000,
+         description='Muon attn.c_proj only'),
+]

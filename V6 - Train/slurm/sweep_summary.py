@@ -100,8 +100,11 @@ def parse_exp_log(log_path):
 # Uses the most common num_iterations across ALL active experiments
 # (including reg_name='none' runs like gflat, weight_proj, etc.)
 # Excludes pure AdamW/Muon baselines (exp_name starts with 'adamw_' or 'muon_').
+# Also folds in HYBRID_EXPERIMENTS so that running hybrids alone still gives the
+# correct SWEEP_END even when all regular EXPERIMENTS are commented out.
 _all_iters = [e['num_iterations'] for e in EXPERIMENTS
               if not e['exp_name'].startswith(('adamw_', 'muon_'))]
+_all_iters += [e['num_iterations'] for e in HYBRID_EXPERIMENTS]
 SWEEP_END  = max(set(_all_iters), key=_all_iters.count) if _all_iters else 6200
 print(f'[INFO] Auto-detected SWEEP_END = {SWEEP_END}')
 

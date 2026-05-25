@@ -31,6 +31,25 @@ LOG_ROOT   = os.path.join(V6_DIR, 'logs')
 OUT_DIR    = os.path.join(SCRIPT_DIR, 'results')
 os.makedirs(OUT_DIR, exist_ok=True)
 
+# ── Tee stdout → console + results/sweep_summary.txt ─────────────────────────
+
+class _Tee:
+    """Write every print() to both the terminal and a file."""
+    def __init__(self, file_path):
+        self._terminal = sys.stdout
+        self._file     = open(file_path, 'w', encoding='utf-8')
+    def write(self, msg):
+        self._terminal.write(msg)
+        self._file.write(msg)
+    def flush(self):
+        self._terminal.flush()
+        self._file.flush()
+    def close(self):
+        self._file.close()
+
+_tee = _Tee(os.path.join(OUT_DIR, 'sweep_summary.txt'))
+sys.stdout = _tee
+
 MUON_LOG  = os.path.join(V6_DIR, 'log_muon.txt')    # 6200-step baseline (fallback)
 ADAMW_LOG = os.path.join(V6_DIR, 'log_adamw.txt')   # 6200-step baseline (fallback)
 
@@ -563,3 +582,8 @@ if hybrid_results:
         fig.savefig(out, dpi=150, bbox_inches='tight')
         plt.close(fig)
         print(f'Saved: {out}')
+
+# ── Close tee ─────────────────────────────────────────────────────────────────
+sys.stdout = _tee._terminal
+_tee.close()
+print(f'Console output saved to: {os.path.join(OUT_DIR, "sweep_summary.txt")}')

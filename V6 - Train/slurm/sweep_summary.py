@@ -201,6 +201,10 @@ for hexp in HYBRID_EXPERIMENTS:
     d_muon  = fl - muon_final  if not np.isnan(fl) else float('nan')
     gap_closed = (d_adamw / muon_gap * -100) if (not np.isnan(d_adamw) and muon_gap > 0) else float('nan')
 
+    # 'layer' group = all matrix types, vary which layers get Muon
+    # 'matrix' group = all layers, vary which matrix type gets Muon
+    _group = 'layer' if hexp.get('muon_matrices') == 'all' else 'matrix'
+
     results.append({
         'exp_name':      name,
         'reg_name':      'hybrid',
@@ -215,6 +219,7 @@ for hexp in HYBRID_EXPERIMENTS:
         'early_stopped': early_stopped,
         'missing':       missing,
         '_description':  hexp.get('description', name),
+        '_group':        _group,
     })
 
 
@@ -418,7 +423,9 @@ valid = [r for r in results if not np.isnan(r['final_loss']) and not r['missing'
 valid.sort(key=lambda x: x['final_loss'])
 
 fig, ax = plt.subplots(figsize=(12, max(5, len(valid) * 0.45 + 1.5)), dpi=150)
-labels = [f'{r["reg_name"]}  λ={r["lam"]:.0e}' for r in valid]
+labels = [r.get('_description', r['exp_name']) if r['reg_name'] == 'hybrid'
+          else f'{r["reg_name"]}  λ={r["lam"]:.0e}'
+          for r in valid]
 values = [r['final_loss'] for r in valid]
 colors = [REG_COLORS.get(r['reg_name'], 'gray') for r in valid]
 
@@ -444,3 +451,112 @@ fig.savefig(out, dpi=150, bbox_inches='tight')
 plt.close(fig)
 print(f'Saved: {out}')
 print('\nDone. Update sweep_config.py Phase 2 lambdas, then resubmit for full runs.')
+
+
+# ── Plot 3: Hybrid Muon+AdamW — val-loss curves ───────────────────────────────
+
+hybrid_results = [r for r in results if r['reg_name'] == 'hybrid']
+
+if hybrid_results:
+    layer_group  = [r for r in hybrid_results if r.get('_group') == 'layer']
+    matrix_group = [r for r in hybrid_results if r.get('_group') == 'matrix']
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6), dpi=150, sharey=True)
+
+    _groups = [
+        (axes[0], layer_group,  'Layer Depth Sweep\n(all matrix types → Muon, vary layers)',
+         cm.Blues,  np.linspace(0.4, 0.9, max(len(layer_group),  1))),
+        (axes[1], matrix_group, 'Matrix Type Sweep\n(all layers, vary which matrices → Muon)',
+         cm.Greens, np.linspace(0.4, 0.9, max(len(matrix_group), 1))),
+    ]
+
+    for ax, group, title, cmap, shade_range in _groups:
+        # AdamW / Muon baselines
+        ax.plot(adamw_steps, adamw_losses, color='#C44E52', linewidth=2.2,
+                linestyle='--', zorder=6, label=f'AdamW  {adamw_final:.4f}')
+        ax.plot(muon_steps,  muon_losses,  color='#4C72B0', linewidth=2.2,
+                linestyle='--', zorder=6, label=f'Muon   {muon_final:.4f}')
+        ax.axhspan(muon_final, adamw_final, color='grey', alpha=0.08)
+
+        cols = cmap(shade_range)
+        for run, col in zip(group, cols):
+            if not run['steps']:
+                continue
+            desc = run.get('_description', run['exp_name'])
+            fl_s = f'{run["final_loss"]:.4f}' if not np.isnan(run['final_loss']) else '—'
+            gc_s = (f'  {run["gap_closed"]:+.1f}%' if not np.isnan(run['gap_closed']) else '')
+            style = ':' if run['early_stopped'] else '-'
+            ax.plot(run['steps'], run['losses'], color=col, linewidth=1.9,
+                    linestyle=style, label=f'{desc}  →  {fl_s}{gc_s}')
+
+        ax.set_title(title, fontsize=11, fontweight='bold')
+        ax.set_xlabel('Iteration', fontsize=9)
+        ax.set_ylabel('Val Loss', fontsize=9)
+        ax.legend(fontsize=8, loc='upper right')
+        ax.grid(True, alpha=0.25)
+        ax.set_xlim(0, SWEEP_END + 100)
+        ax.tick_params(labelsize=8)
+
+    fig.suptitle(
+        f'Hybrid Muon+AdamW — Layer & Matrix Sweep  (step {SWEEP_END})\n'
+        f'AdamW = {adamw_final:.4f}   Muon = {muon_final:.4f}   Gap = {muon_gap:.4f}',
+        fontsize=12,
+    )
+    fig.tight_layout()
+    out = os.path.join(OUT_DIR, 'hybrid_curves.png')
+    fig.savefig(out, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved: {out}')
+
+
+# ── Plot 4: Hybrid — gap-closed bar chart ─────────────────────────────────────
+
+    valid_hybrid = [r for r in hybrid_results
+                    if not r['missing'] and not np.isnan(r['gap_closed'])]
+
+    if valid_hybrid:
+        # Order: layer group first (sorted by last_step desc as tiebreak → by exp order),
+        # then matrix group — keep the natural order from HYBRID_EXPERIMENTS
+        ordered = [r for r in hybrid_results if r in valid_hybrid]
+
+        fig, ax = plt.subplots(figsize=(10, max(4, len(ordered) * 0.55 + 2.0)), dpi=150)
+
+        bar_labels = [r.get('_description', r['exp_name']) for r in ordered]
+        bar_values = [r['gap_closed'] for r in ordered]
+        bar_colors = ['#4C9BE8' if r.get('_group') == 'layer' else '#3CB371'
+                      for r in ordered]
+
+        bars = ax.barh(bar_labels, bar_values, color=bar_colors,
+                       edgecolor='white', linewidth=0.5)
+        ax.bar_label(bars, fmt='%+.1f%%', padding=4, fontsize=9)
+
+        ax.axvline(0,   color='#C44E52', linewidth=2.0, linestyle='--',
+                   label=f'AdamW baseline (0%)')
+        ax.axvline(100, color='#4C72B0', linewidth=2.0, linestyle='--',
+                   label=f'Muon target (100%)')
+        ax.axvspan(0, 100, color='grey', alpha=0.06)
+
+        # Custom legend for groups
+        from matplotlib.patches import Patch
+        ax.legend(handles=[
+            ax.get_lines()[0], ax.get_lines()[1],
+            Patch(color='#4C9BE8', label='Layer sweep (all matrices)'),
+            Patch(color='#3CB371', label='Matrix sweep (all layers)'),
+        ], fontsize=9, loc='lower right')
+
+        ax.set_xlabel('Gap closed toward Muon  (%)', fontsize=10)
+        ax.set_title(
+            f'Hybrid Muon+AdamW — Fraction of Muon Gap Recovered  (step {SWEEP_END})\n'
+            f'0% = AdamW level  |  100% = full Muon  |  Gap = {muon_gap:.4f}',
+            fontsize=11,
+        )
+        ax.grid(True, axis='x', alpha=0.25)
+        lo = min(bar_values + [0]) - 10
+        hi = max(bar_values + [100]) + 15
+        ax.set_xlim(lo, hi)
+        ax.invert_yaxis()
+        fig.tight_layout()
+        out = os.path.join(OUT_DIR, 'hybrid_gap.png')
+        fig.savefig(out, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        print(f'Saved: {out}')

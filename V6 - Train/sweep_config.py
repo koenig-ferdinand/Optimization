@@ -42,24 +42,24 @@
 EXPERIMENTS = [
 
     # ── Phase 1: λ sweep (3000 iter, early stopping on) ─── DONE, do not re-run
-    # dict(exp_name='sv_var_lam1e-5',  reg_name='sv_variance',    reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='sv_var_lam5e-5',  reg_name='sv_variance',    reg_lambda=5e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='sv_var_lam1e-4',  reg_name='sv_variance',    reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='sv_var_lam5e-4',  reg_name='sv_variance',    reg_lambda=5e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='orth_lam1e-6',    reg_name='orthogonal',     reg_lambda=1e-6,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='orth_lam5e-6',    reg_name='orthogonal',     reg_lambda=5e-6,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='orth_lam1e-5',    reg_name='orthogonal',     reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='orth_lam5e-5',    reg_name='orthogonal',     reg_lambda=5e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='effrank_lam1e-5', reg_name='effective_rank', reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='effrank_lam5e-5', reg_name='effective_rank', reg_lambda=5e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='effrank_lam1e-4', reg_name='effective_rank', reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='strank_lam1e-5',  reg_name='stable_rank',    reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='strank_lam5e-5',  reg_name='stable_rank',    reg_lambda=5e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='strank_lam1e-4',  reg_name='stable_rank',    reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='iso_lam1e-6',     reg_name='isometry',       reg_lambda=1e-6,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='iso_lam1e-5',     reg_name='isometry',       reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='deadsv_lam1e-5',  reg_name='dead_sv',        reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='deadsv_lam1e-4',  reg_name='dead_sv',        reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='sv_var_lam1e-5',  reg_name='sv_variance',    reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='sv_var_lam5e-5',  reg_name='sv_variance',    reg_lambda=5e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='sv_var_lam1e-4',  reg_name='sv_variance',    reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='sv_var_lam5e-4',  reg_name='sv_variance',    reg_lambda=5e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='orth_lam1e-6',    reg_name='orthogonal',     reg_lambda=1e-6,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='orth_lam5e-6',    reg_name='orthogonal',     reg_lambda=5e-6,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='orth_lam1e-5',    reg_name='orthogonal',     reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='orth_lam5e-5',    reg_name='orthogonal',     reg_lambda=5e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='effrank_lam1e-5', reg_name='effective_rank', reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='effrank_lam5e-5', reg_name='effective_rank', reg_lambda=5e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='effrank_lam1e-4', reg_name='effective_rank', reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='strank_lam1e-5',  reg_name='stable_rank',    reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='strank_lam5e-5',  reg_name='stable_rank',    reg_lambda=5e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='strank_lam1e-4',  reg_name='stable_rank',    reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='iso_lam1e-6',     reg_name='isometry',       reg_lambda=1e-6,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='iso_lam1e-5',     reg_name='isometry',       reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='deadsv_lam1e-5',  reg_name='dead_sv',        reg_lambda=1e-5,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='deadsv_lam1e-4',  reg_name='dead_sv',        reg_lambda=1e-4,  reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
 
     # ── Phase 1 baseline — AdamW with same 3000-step schedule ────────────────
     # Run this once to get a fair comparison baseline for all Phase 1 reg runs.
@@ -67,6 +67,13 @@ EXPERIMENTS = [
     # of log_adamw.txt (which used a 6200-step schedule).
 
     dict(exp_name='adamw_3000', reg_name='none', reg_lambda=0.0, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100,   early_stop=False),
+
+    # ── Corrected AdamW baseline — same 3000-step schedule but with warmdown=871 ─
+    # Previous adamw_3000 used the default warmdown=1800 (designed for 6200 steps),
+    # meaning 60% of training ran at a reduced LR. This re-run uses the correct
+    # proportional warmdown: round(1800/6200 * 3000) = 871 — matching muon_3000
+    # and all hybrid experiments. Use this as the true baseline for hybrid gap %.
+    dict(exp_name='adamw_3000_correct_warmdown', reg_name='none', reg_lambda=0.0, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
 
     # ── Phase 3: gradient spectrum flattening sweep (3000 iter) ──────────────
     # Tests whether equalising gradient singular values (like Muon does) closes
@@ -88,23 +95,23 @@ EXPERIMENTS = [
     # ── Phase 4: four new methods (3000 iter) ────────────────────────────────
     # 4a. Dynamic sv_variance — self-amplifying lambda, gradient stays large
     #     even when variance collapses. Same λ range as Phase 1 for comparison.
-    # dict(exp_name='dyn_sv_lam1e-4', reg_name='dynamic_sv_variance', reg_lambda=1e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='dyn_sv_lam1e-3', reg_name='dynamic_sv_variance', reg_lambda=1e-3, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='dyn_sv_lam1e-4', reg_name='dynamic_sv_variance', reg_lambda=1e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='dyn_sv_lam1e-3', reg_name='dynamic_sv_variance', reg_lambda=1e-3, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
 
     # 4b. Log effective rank — log-barrier keeps gradient large near optimum.
-    # dict(exp_name='log_effrank_lam1e-4', reg_name='log_effective_rank', reg_lambda=1e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='log_effrank_lam1e-3', reg_name='log_effective_rank', reg_lambda=1e-3, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='log_effrank_lam1e-4', reg_name='log_effective_rank', reg_lambda=1e-4, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='log_effrank_lam1e-3', reg_name='log_effective_rank', reg_lambda=1e-3, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
 
     # 4c. Gradient balancing — reg gradient scaled to fixed % of task gradient.
     #     ratio=0.05 means reg contributes exactly 5% of update magnitude.
-    # dict(exp_name='gbal_5pct',  reg_name='sv_variance', reg_lambda=1.0, grad_balance_ratio=0.05, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
-    # dict(exp_name='gbal_10pct', reg_name='sv_variance', reg_lambda=1.0, grad_balance_ratio=0.10, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='gbal_5pct',  reg_name='sv_variance', reg_lambda=1.0, grad_balance_ratio=0.05, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='gbal_10pct', reg_name='sv_variance', reg_lambda=1.0, grad_balance_ratio=0.10, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=True),
 
     # 4d. Post-update weight projection — directly flattens SV spectrum of
     #     weights after each AdamW step, bypassing v_t entirely.
-    # dict(exp_name='wproj_01', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.01, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
-    # dict(exp_name='wproj_05', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.05, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
-    # dict(exp_name='wproj_10', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.10, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='wproj_01', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.01, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='wproj_05', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.05, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='wproj_10', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.10, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
 
     # ── Phase 2: full runs with best λ per regularizer (6200 iter) ───────────
     # sweep_summary.py will auto-use log_adamw_{SWEEP_END}.txt as the baseline.
@@ -186,4 +193,58 @@ HYBRID_EXPERIMENTS = [
     # 10 — Attention output projection only (writes back to residual stream)
     dict(exp_name='hybrid_attn_out', muon_layers='all', muon_matrices='attn.c_proj',               num_iterations=3000,
          description='Muon attn.c_proj only'),
+
+    # =========================================================================
+    # Phase 2 experiments  —  run via slurm/run_hybrid2.sh
+    # =========================================================================
+
+    # ── Job 1 (1-5): LR diagnosis + quarter-layer sweep ──────────────────────
+    # Phase 1a: was the Wout (mlp.c_proj) failure a pure LR-scale issue?
+    # hybrid_cproj (0.10×, above) already exists — compare at 0.05× and 0.02×.
+    dict(exp_name='hybrid_cproj_lr05', muon_layers='all', muon_matrices='mlp.c_proj',
+         muon_mlp_lr_ratio=0.05, num_iterations=3000,
+         description='Muon Wout lr=0.05x'),
+    dict(exp_name='hybrid_cproj_lr02', muon_layers='all', muon_matrices='mlp.c_proj',
+         muon_mlp_lr_ratio=0.02, num_iterations=3000,
+         description='Muon Wout lr=0.02x'),
+
+    # Phase 1a: same diagnostic for Win (mlp.c_fc) — deepest failure case
+    dict(exp_name='hybrid_cfc_lr02',   muon_layers='all', muon_matrices='mlp.c_fc',
+         muon_mlp_lr_ratio=0.02, num_iterations=3000,
+         description='Muon Win lr=0.02x'),
+
+    # Phase 2: fill in the missing middle quarters
+    # (Q1≈first3 and Q4≈last3 already exist from Job 1 above)
+    dict(exp_name='hybrid_q2', muon_layers='3,4,5', muon_matrices='all',
+         num_iterations=3000, description='Muon layers 3-5 (Q2)'),
+    dict(exp_name='hybrid_q3', muon_layers='6,7,8', muon_matrices='all',
+         num_iterations=3000, description='Muon layers 6-8 (Q3)'),
+
+    # ── Job 2 (6-10): Coupled MLP + paper replication ────────────────────────
+    # Phase 1b: both MLP matrices under Muon with reduced LR — does coupling help?
+    dict(exp_name='hybrid_mlp_lr02', muon_layers='all', muon_matrices='mlp.c_fc,mlp.c_proj',
+         muon_mlp_lr_ratio=0.02, num_iterations=3000,
+         description='Muon MLP lr=0.02x'),
+    dict(exp_name='hybrid_mlp_lr01', muon_layers='all', muon_matrices='mlp.c_fc,mlp.c_proj',
+         muon_mlp_lr_ratio=0.01, num_iterations=3000,
+         description='Muon MLP lr=0.01x'),
+
+    # Phase 3a: O + Wout combined (no model change needed)
+    # attn.c_proj (O) uses standard 0.1× LR; mlp.c_proj (Wout) uses 0.02×
+    dict(exp_name='hybrid_out', muon_layers='all', muon_matrices='attn.c_proj,mlp.c_proj',
+         muon_mlp_lr_ratio=0.02, num_iterations=3000,
+         description='Muon O+Wout'),
+
+    # Phase 3b: paper's VO setting — V and O only, split_qkv=True required
+    # Q and K stay under AdamW; only V and O go to Muon.
+    dict(exp_name='hybrid_vo',     muon_layers='all', muon_matrices='attn.c_v,attn.c_proj',
+         split_qkv=True, num_iterations=3000,
+         description='Muon V+O (paper VO)'),
+
+    # Phase 3b: paper's VO+FFN — V, O, Win, Wout all Muon; Q, K AdamW
+    # MLP matrices use 0.02× LR to prevent GELU instability.
+    dict(exp_name='hybrid_vo_ffn', muon_layers='all',
+         muon_matrices='attn.c_v,attn.c_proj,mlp.c_fc,mlp.c_proj',
+         split_qkv=True, muon_mlp_lr_ratio=0.02, num_iterations=3000,
+         description='Muon V+O+FFN (paper)'),
 ]

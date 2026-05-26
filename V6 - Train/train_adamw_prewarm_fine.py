@@ -303,6 +303,7 @@ _p.add_argument('--reg_lambda',     type=float, default=0.0)
 _p.add_argument('--reg_matrices',   type=str,   default='mlp.c_proj,mlp.c_fc')
 _p.add_argument('--reg_layers',     type=str,   default='all')
 _p.add_argument('--num_iterations', type=int,   default=args.num_iterations)
+_p.add_argument('--warmdown_iters', type=int,   default=args.warmdown_iters)
 _p.add_argument('--save_every',              type=int,   default=args.save_every)
 _p.add_argument('--early_stop',              action='store_true')
 _p.add_argument('--grad_flatten_strength',   type=float, default=0.0,
@@ -318,6 +319,7 @@ _reg = _p.parse_args()
 
 # Apply overrides from CLI
 args.num_iterations = _reg.num_iterations
+args.warmdown_iters = _reg.warmdown_iters
 args.save_every     = _reg.save_every
 
 _use_reg              = (_reg.reg_name != 'none') and (_reg.reg_lambda > 0.0)

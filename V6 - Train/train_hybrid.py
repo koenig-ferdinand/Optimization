@@ -111,17 +111,28 @@ def rmsnorm(x0, eps=1e-6):
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.n_head = config.n_head
-        self.n_embd = config.n_embd
-        self.head_dim = self.n_embd // self.n_head
-        self.c_attn = nn.Linear(self.n_embd, 3 * self.n_embd, bias=False)
+        self.n_head    = config.n_head
+        self.n_embd    = config.n_embd
+        self.head_dim  = self.n_embd // self.n_head
+        self.split_qkv = config.split_qkv
+        if config.split_qkv:
+            # Separate projections so Q, K can stay AdamW while V goes to Muon
+            self.c_q = nn.Linear(self.n_embd, self.n_embd, bias=False)
+            self.c_k = nn.Linear(self.n_embd, self.n_embd, bias=False)
+            self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        else:
+            self.c_attn = nn.Linear(self.n_embd, 3 * self.n_embd, bias=False)
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        self.rotary = Rotary(self.head_dim)
+        self.rotary  = Rotary(self.head_dim)
 
     def forward(self, x):
         B, T, C = x.size()
-        qkv = self.c_attn(x)
-        q, k, v = qkv.split(self.n_embd, dim=2)
+        if self.split_qkv:
+            q = self.c_q(x)
+            k = self.c_k(x)
+            v = self.c_v(x)
+        else:
+            q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
         q = q.view(B, T, self.n_head, self.head_dim)
         k = k.view(B, T, self.n_head, self.head_dim)
         v = v.view(B, T, self.n_head, self.head_dim)
@@ -156,10 +167,11 @@ class Block(nn.Module):
 
 @dataclass
 class GPTConfig:
-    vocab_size: int = 50257
-    n_layer:    int = 12
-    n_head:     int = 12
-    n_embd:     int = 768
+    vocab_size : int  = 50257
+    n_layer    : int  = 12
+    n_head     : int  = 12
+    n_embd     : int  = 768
+    split_qkv  : bool = False   # use separate c_q/c_k/c_v instead of fused c_attn
 
 class GPT(nn.Module):
     def __init__(self, config):
@@ -256,35 +268,56 @@ class Hyperparameters:
     save_every         : int   = 100
     exp_name           : str   = ''
     # ── Hybrid control ──────────────────────────────────────────────────────────
-    # muon_layers:   'all' or comma-separated layer indices, e.g. '0,1,2'
-    # muon_matrices: 'all' or comma-separated sub-paths,  e.g. 'mlp.c_fc'
-    #                Available: mlp.c_fc  mlp.c_proj  attn.c_attn  attn.c_proj
-    muon_layers   : str = 'all'
-    muon_matrices : str = 'all'
+    # muon_layers:       'all' or comma-separated layer indices, e.g. '0,1,2'
+    # muon_matrices:     'all' or comma-separated sub-paths,  e.g. 'mlp.c_fc'
+    #   split_qkv=False: mlp.c_fc  mlp.c_proj  attn.c_attn  attn.c_proj
+    #   split_qkv=True:  mlp.c_fc  mlp.c_proj  attn.c_q  attn.c_k  attn.c_v  attn.c_proj
+    # muon_lr_ratio:     Muon LR = muon_lr_ratio × AdamW LR  (attention matrices)
+    # muon_mlp_lr_ratio: override LR ratio for MLP matrices; 0 = use muon_lr_ratio
+    # split_qkv:         split c_attn into separate c_q/c_k/c_v projections
+    muon_layers       : str   = 'all'
+    muon_matrices     : str   = 'all'
+    muon_lr_ratio     : float = 0.1
+    muon_mlp_lr_ratio : float = 0.0
+    split_qkv         : bool  = False
 
 args = Hyperparameters()
 
 _p = argparse.ArgumentParser(add_help=False)
-_p.add_argument('--exp_name',       type=str,   default=args.exp_name)
-_p.add_argument('--num_iterations', type=int,   default=args.num_iterations)
-_p.add_argument('--warmdown_iters', type=int,   default=args.warmdown_iters)
-_p.add_argument('--save_every',     type=int,   default=args.save_every)
-_p.add_argument('--muon_layers',    type=str,   default=args.muon_layers,
+_p.add_argument('--exp_name',           type=str,   default=args.exp_name)
+_p.add_argument('--num_iterations',     type=int,   default=args.num_iterations)
+_p.add_argument('--warmdown_iters',     type=int,   default=args.warmdown_iters)
+_p.add_argument('--save_every',         type=int,   default=args.save_every)
+_p.add_argument('--muon_layers',        type=str,   default=args.muon_layers,
                 help="'all' or comma-separated layer indices, e.g. '0,1,2'")
-_p.add_argument('--muon_matrices',  type=str,   default=args.muon_matrices,
+_p.add_argument('--muon_matrices',      type=str,   default=args.muon_matrices,
                 help="'all' or comma-separated matrix paths, e.g. 'mlp.c_fc,mlp.c_proj'")
+_p.add_argument('--muon_lr_ratio',      type=float, default=args.muon_lr_ratio,
+                help='Muon LR = muon_lr_ratio × AdamW LR (applies to attention matrices)')
+_p.add_argument('--muon_mlp_lr_ratio',  type=float, default=args.muon_mlp_lr_ratio,
+                help='Override Muon LR ratio for MLP matrices; 0 = use muon_lr_ratio')
+_p.add_argument('--split_qkv',          action='store_true', default=args.split_qkv,
+                help='Use separate c_q/c_k/c_v projections instead of fused c_attn')
 _cli, _ = _p.parse_known_args()
-args.exp_name       = _cli.exp_name
-args.num_iterations = _cli.num_iterations
-args.warmdown_iters = _cli.warmdown_iters
-args.save_every     = _cli.save_every
-args.muon_layers    = _cli.muon_layers
-args.muon_matrices  = _cli.muon_matrices
+args.exp_name           = _cli.exp_name
+args.num_iterations     = _cli.num_iterations
+args.warmdown_iters     = _cli.warmdown_iters
+args.save_every         = _cli.save_every
+args.muon_layers        = _cli.muon_layers
+args.muon_matrices      = _cli.muon_matrices
+args.muon_lr_ratio      = _cli.muon_lr_ratio
+args.muon_mlp_lr_ratio  = _cli.muon_mlp_lr_ratio
+args.split_qkv          = _cli.split_qkv
 
 # Parse muon_layers / muon_matrices into usable sets
 _muon_layer_ids  = None if args.muon_layers == 'all' \
                    else set(int(x) for x in args.muon_layers.split(','))
-_ALL_MATRICES    = {'mlp.c_fc', 'mlp.c_proj', 'attn.c_attn', 'attn.c_proj'}
+# When split_qkv=True the fused c_attn is replaced by c_q/c_k/c_v, so 'all'
+# expands to the larger set of 6 individual projections instead of 4.
+_ALL_MATRICES    = ({'mlp.c_fc', 'mlp.c_proj',
+                     'attn.c_q', 'attn.c_k', 'attn.c_v', 'attn.c_proj'}
+                    if args.split_qkv else
+                    {'mlp.c_fc', 'mlp.c_proj', 'attn.c_attn', 'attn.c_proj'})
 _muon_matrix_set = _ALL_MATRICES if args.muon_matrices == 'all' \
                    else set(m.strip() for m in args.muon_matrices.split(','))
 
@@ -319,7 +352,7 @@ x, y = train_loader.next_batch()
 # Model
 # =============================================================================
 
-model = GPT(GPTConfig()).cuda()
+model = GPT(GPTConfig(split_qkv=args.split_qkv)).cuda()
 model = torch.compile(model)
 model = DDP(model, device_ids=[ddp_local_rank])
 raw_model = model.module
@@ -338,20 +371,24 @@ ctx = torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
 #   2. Its matrix path is in muon_matrix_set (or muon_matrices='all')
 #   3. It is 2-dimensional (Muon only works on matrices)
 
-muon_params  = []
-adamw_params = []
+# muon_attn_params: attention weight matrices → standard Muon LR (muon_lr_ratio)
+# muon_mlp_params:  MLP weight matrices      → potentially lower LR (muon_mlp_lr_ratio)
+# adamw_params:     everything else (embeddings, lm_head, biases, non-selected params)
+muon_attn_params = []
+muon_mlp_params  = []
+adamw_params     = []
 
-n_layers = len(raw_model.transformer.h)
+n_layers   = len(raw_model.transformer.h)
 muon_count = 0
 
 for layer_idx, block in enumerate(raw_model.transformer.h):
     layer_in_muon = (_muon_layer_ids is None) or (layer_idx in _muon_layer_ids)
     for param_path, param in block.named_parameters():
-        # Determine which matrix this belongs to (e.g. 'mlp.c_fc')
-        matrix_path = '.'.join(param_path.split('.')[:2])   # e.g. 'mlp.c_fc'
+        matrix_path    = '.'.join(param_path.split('.')[:2])   # e.g. 'mlp.c_fc'
         matrix_in_muon = matrix_path in _muon_matrix_set
+        is_mlp         = param_path.startswith('mlp.')
         if layer_in_muon and matrix_in_muon and param.dim() == 2:
-            muon_params.append(param)
+            (muon_mlp_params if is_mlp else muon_attn_params).append(param)
             muon_count += 1
         else:
             adamw_params.append(param)
@@ -364,16 +401,25 @@ for param in raw_model.lm_head.parameters():
     if not any(param is p for p in adamw_params):
         adamw_params.append(param)
 
+_muon_attn_lr = args.muon_lr_ratio * args.learning_rate
+_muon_mlp_lr  = (args.muon_mlp_lr_ratio * args.learning_rate
+                 if args.muon_mlp_lr_ratio > 0.0 else _muon_attn_lr)
+
 if master_process:
-    total_params = sum(p.numel() for p in raw_model.parameters())
-    muon_param_count = sum(p.numel() for p in muon_params)
+    total_params     = sum(p.numel() for p in raw_model.parameters())
+    muon_attn_count  = sum(p.numel() for p in muon_attn_params)
+    muon_mlp_count   = sum(p.numel() for p in muon_mlp_params)
+    muon_param_count = muon_attn_count + muon_mlp_count
     print(f'{"="*60}')
     print(f'Hybrid optimizer split:')
-    print(f'  muon_layers   : {args.muon_layers}')
-    print(f'  muon_matrices : {args.muon_matrices}')
-    print(f'  Muon params   : {muon_param_count:,} / {total_params:,} '
+    print(f'  muon_layers       : {args.muon_layers}')
+    print(f'  muon_matrices     : {args.muon_matrices}')
+    print(f'  split_qkv         : {args.split_qkv}')
+    print(f'  Muon attn params  : {muon_attn_count:,}  lr={_muon_attn_lr:.2e}')
+    print(f'  Muon MLP  params  : {muon_mlp_count:,}  lr={_muon_mlp_lr:.2e}')
+    print(f'  Muon total        : {muon_param_count:,} / {total_params:,} '
           f'({100*muon_param_count/total_params:.1f}%)  [{muon_count} matrices]')
-    print(f'  AdamW params  : {total_params - muon_param_count:,}')
+    print(f'  AdamW params      : {total_params - muon_param_count:,}  lr={args.learning_rate:.2e}')
     print(f'{"="*60}')
 
 optimizer_adamw = torch.optim.AdamW(
@@ -381,9 +427,17 @@ optimizer_adamw = torch.optim.AdamW(
     weight_decay=args.weight_decay, fused=True)
 optimizers = [optimizer_adamw]
 
-if muon_params:
-    optimizer_muon = Muon(muon_params, lr=0.1 * args.learning_rate, momentum=0.95)
-    optimizers.append(optimizer_muon)
+# Use a single Muon optimizer when LRs are identical (backward compat),
+# or two separate Muon optimizers when MLP needs a different LR.
+if args.muon_mlp_lr_ratio > 0.0:
+    if muon_attn_params:
+        optimizers.append(Muon(muon_attn_params, lr=_muon_attn_lr, momentum=0.95))
+    if muon_mlp_params:
+        optimizers.append(Muon(muon_mlp_params,  lr=_muon_mlp_lr,  momentum=0.95))
+else:
+    muon_all_params = muon_attn_params + muon_mlp_params
+    if muon_all_params:
+        optimizers.append(Muon(muon_all_params, lr=_muon_attn_lr, momentum=0.95))
 
 # =============================================================================
 # LR schedule  (same shape as muon_3000 / adamw_3000)
@@ -418,7 +472,10 @@ if master_process:
         f.write('=' * 100 + '\n')
         f.write(f'exp_name: {args.exp_name} | '
                 f'muon_layers: {args.muon_layers} | '
-                f'muon_matrices: {args.muon_matrices}\n')
+                f'muon_matrices: {args.muon_matrices} | '
+                f'muon_lr_ratio: {args.muon_lr_ratio} | '
+                f'muon_mlp_lr_ratio: {args.muon_mlp_lr_ratio} | '
+                f'split_qkv: {args.split_qkv}\n')
         f.write('=' * 100 + '\n')
         f.write(code)
         f.write('=' * 100 + '\n')

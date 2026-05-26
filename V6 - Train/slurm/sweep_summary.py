@@ -153,12 +153,25 @@ muon_log_path, muon_log_name = next(
 print(f'[INFO] Muon  baseline : {muon_log_name}')
 muon_data = parse_baseline_log(muon_log_path)
 
+# Load corrected AdamW baseline (3000 steps, warmdown=871 — correct proportion)
+_adamw_correct_log = os.path.join(LOG_ROOT, 'adamw_3000_correct_warmdown', 'log.txt')
+_ac_steps, _ac_losses, _, _ac_missing = parse_exp_log(_adamw_correct_log)
+adamw_correct_data  = dict(zip(_ac_steps, _ac_losses))
+adamw_correct_final = _ac_losses[-1] if _ac_losses else float('nan')
+_adamw_correct_avail = not _ac_missing and bool(_ac_losses)
+if _adamw_correct_avail:
+    print(f'[INFO] AdamW corrected : logs/adamw_3000_correct_warmdown/log.txt')
+else:
+    print(f'[INFO] AdamW corrected : NOT YET AVAILABLE (run adamw_3000_correct_warmdown)')
+
 # ── Filter experiments by phase ───────────────────────────────────────────────
 # Phase 1 (SWEEP_END ≤ 3000): exclude full_* runs (they use a longer schedule)
 # Phase 2 (SWEEP_END > 3000): exclude non-full_* runs (they are short sweeps)
 if SWEEP_END <= 3000:
     _before = len(EXPERIMENTS)
-    EXPERIMENTS = [e for e in EXPERIMENTS if not e['exp_name'].startswith('full_')]
+    EXPERIMENTS = [e for e in EXPERIMENTS
+                   if not e['exp_name'].startswith('full_')
+                   and e['exp_name'] not in (f'adamw_{SWEEP_END}', 'adamw_3000_correct_warmdown')]
     _skip = _before - len(EXPERIMENTS)
     if _skip:
         print(f'[INFO] Phase 1 mode: skipped {_skip} full_* experiment(s)')
@@ -247,41 +260,58 @@ for hexp in HYBRID_EXPERIMENTS:
 
 # ── Console table ─────────────────────────────────────────────────────────────
 
-COL = 34
+COL    = 34   # experiment name column width
+REG_W  = 16   # regularizer column width
+DESC_W = 30   # λ / description column width (wide enough for longest hybrid description)
+TBL_W  = COL + 1 + REG_W + 1 + DESC_W + 2 + 5 + 2 + 7 + 2 + 7 + 2 + 7 + 2 + 6  # = 126
+
+_correct_gap = adamw_correct_final - muon_final if _adamw_correct_avail else float('nan')
+_correct_str = (f'   AdamW✓ = {adamw_correct_final:.4f}   Gap✓ = {_correct_gap:.4f}'
+                if _adamw_correct_avail else '   AdamW✓ = (pending)')
 print()
-print('=' * 95)
+print('=' * TBL_W)
 print(f'  Baselines at step {SWEEP_END}:   '
       f'AdamW = {adamw_final:.4f}   '
       f'Muon = {muon_final:.4f}   '
-      f'Gap = {muon_gap:.4f}')
-print('=' * 95)
-print(f'{"Experiment":<{COL}} {"Reg":<16} {"λ":>7}  {"Steps":>5}  '
+      f'Gap = {muon_gap:.4f}'
+      f'{_correct_str}')
+print('=' * TBL_W)
+print(f'{"Experiment":<{COL}} {"Reg":<{REG_W}} {"λ / Description":<{DESC_W}}  {"Steps":>5}  '
       f'{"ValLoss":>7}  {"ΔAdamW":>7}  {"ΔMuon":>7}  {"Gap%":>6}  Status')
-print('-' * 95)
+print('-' * TBL_W)
 
 for r in sorted(results, key=lambda x: x['final_loss']):
     status = ('MISSING'    if r['missing']
               else 'STOPPED' if r['early_stopped']
               else 'OK')
-    fl_s  = f'{r["final_loss"]:.4f}' if not np.isnan(r['final_loss']) else '  —'
-    da_s  = f'{r["d_adamw"]:+.4f}'   if not np.isnan(r['d_adamw'])   else '  —'
-    dm_s  = f'{r["d_muon"]:+.4f}'    if not np.isnan(r['d_muon'])    else '  —'
-    gc_s  = f'{r["gap_closed"]:+.1f}%' if not np.isnan(r['gap_closed']) else '  —'
-    # For hybrid entries, show description instead of raw λ column
+    fl_s  = f'{r["final_loss"]:.4f}' if not np.isnan(r['final_loss']) else '—'
+    da_s  = f'{r["d_adamw"]:+.4f}'   if not np.isnan(r['d_adamw'])   else '—'
+    dm_s  = f'{r["d_muon"]:+.4f}'    if not np.isnan(r['d_muon'])    else '—'
+    gc_s  = f'{r["gap_closed"]:+.1f}%' if not np.isnan(r['gap_closed']) else '—'
     if r['reg_name'] == 'hybrid':
-        desc = r.get('_description', r['exp_name'])
-        print(f'{r["exp_name"]:<{COL}} {"hybrid":<16} {desc:>7}  '
-              f'{r["last_step"]:>5}  {fl_s:>7}  {da_s:>7}  {dm_s:>7}  {gc_s:>6}  {status}')
+        desc = r.get('_description', r['exp_name'])[:DESC_W]
+        lam_col = f'{desc:<{DESC_W}}'
     else:
-        print(f'{r["exp_name"]:<{COL}} {r["reg_name"]:<16} {r["lam"]:>7.0e}  '
-              f'{r["last_step"]:>5}  {fl_s:>7}  {da_s:>7}  {dm_s:>7}  {gc_s:>6}  {status}')
+        lam_col = f'{r["lam"]:>{DESC_W}.0e}'
+    print(f'{r["exp_name"]:<{COL}} {r["reg_name"]:<{REG_W}} {lam_col}  '
+          f'{r["last_step"]:>5}  {fl_s:>7}  {da_s:>7}  {dm_s:>7}  {gc_s:>6}  {status}')
 
-print('-' * 95)
-print(f'{"AdamW baseline":<{COL}} {"—":<16} {"—":>7}  {SWEEP_END:>5}  '
+print('-' * TBL_W)
+_dash = f'{"—":<{DESC_W}}'
+print(f'{"AdamW baseline (wrong warmdown)":<{COL}} {"—":<{REG_W}} {_dash}  {SWEEP_END:>5}  '
       f'{adamw_final:>7.4f}  {"0.0000":>7}  {(-muon_gap):>7.4f}  {"0.0%":>6}  REF  ← {adamw_log_name}')
-print(f'{"Muon baseline (target)":<{COL}} {"—":<16} {"—":>7}  {SWEEP_END:>5}  '
+if _adamw_correct_avail:
+    _d_correct  = adamw_correct_final - adamw_final
+    _gc_correct = (_d_correct / muon_gap * -100) if muon_gap > 0 else float('nan')
+    print(f'{"AdamW baseline (correct warmdown)":<{COL}} {"—":<{REG_W}} {_dash}  {SWEEP_END:>5}  '
+          f'{adamw_correct_final:>7.4f}  {_d_correct:>+7.4f}  {(adamw_correct_final-muon_final):>+7.4f}  '
+          f'{_gc_correct:>+5.1f}%  REF✓')
+else:
+    print(f'{"AdamW baseline (correct warmdown)":<{COL}} {"—":<{REG_W}} {_dash}  {"—":>5}  '
+          f'{"(pending)":>7}  {"—":>7}  {"—":>7}  {"—":>6}  REF✓ (not yet run)')
+print(f'{"Muon baseline (target)":<{COL}} {"—":<{REG_W}} {_dash}  {SWEEP_END:>5}  '
       f'{muon_final:>7.4f}  {(-muon_gap):>7.4f}  {"0.0000":>7}  {"100.0%":>6}  TARGET  ← {muon_log_name}')
-print('=' * 95)
+print('=' * TBL_W)
 
 
 # ── Detailed trajectory (every 100 steps) ────────────────────────────────────
@@ -311,12 +341,16 @@ def _traj_rows(lut, label, adamw_lut, steps):
     return tokens
 
 print()
-print('─' * 95)
+print('─' * TBL_W)
 print('  Val-loss trajectory  (every 100 steps)   ↓ = below AdamW at that step')
-print('─' * 95)
+print('─' * TBL_W)
 
-# ── Print AdamW & Muon reference rows once ───────────────────────────────────
-for ref_label, ref_lut in [('  AdamW ref', _adamw_lut), ('   Muon ref', _muon_lut)]:
+# ── Print AdamW, AdamW✓ & Muon reference rows once ──────────────────────────
+_adamw_correct_lut = dict(zip(_ac_steps, _ac_losses))
+_ref_series = [('  AdamW ref (wrong wd)', _adamw_lut), ('   Muon ref', _muon_lut)]
+if _adamw_correct_avail:
+    _ref_series.insert(1, ('AdamW✓ ref (correct wd)', _adamw_correct_lut))
+for ref_label, ref_lut in _ref_series:
     ref_tokens = []
     for s in _all_steps:
         v = ref_lut.get(s)
@@ -327,7 +361,7 @@ for ref_label, ref_lut in [('  AdamW ref', _adamw_lut), ('   Muon ref', _muon_lu
             print('    ' + '  '.join(ref_tokens[i:i + _PER_ROW]))
 
 print()
-print('─' * 95)
+print('─' * TBL_W)
 
 # ── Print one block per experiment, grouped by regularizer ───────────────────
 cur_reg = None
@@ -354,7 +388,7 @@ for r in results:          # keep original EXPERIMENTS order
         print('    ' + '  '.join(tokens[i:i + _PER_ROW]))
 
 print()
-print('─' * 95)
+print('─' * TBL_W)
 
 
 # ── Best-λ per regularizer ────────────────────────────────────────────────────
@@ -390,11 +424,14 @@ axes = axes.flatten()
 for ax_i, reg_name in enumerate(all_regs):
     ax = axes[ax_i]
 
-    # Baselines
+    # Baselines — always show old AdamW (reg exps were built on it) + correct if available
     ax.plot(adamw_steps, adamw_losses, color='#C44E52', linewidth=2.2,
-            linestyle='--', label=f'AdamW baseline ({adamw_final:.4f})', zorder=6)
+            linestyle='--', label=f'AdamW wrong wd ({adamw_final:.4f})', zorder=6)
     ax.plot(muon_steps,  muon_losses,  color='#4C72B0', linewidth=2.2,
-            linestyle='--', label=f'Muon baseline ({muon_final:.4f})',  zorder=6)
+            linestyle='--', label=f'Muon baseline ({muon_final:.4f})', zorder=6)
+    if _adamw_correct_avail:
+        ax.plot(_ac_steps, _ac_losses, color='#e67e22', linewidth=2.2,
+                linestyle='--', label=f'AdamW✓ ({adamw_correct_final:.4f})', zorder=6)
 
     # Experiments for this regularizer
     runs = sorted([r for r in results if r['reg_name'] == reg_name], key=lambda x: x['lam'])
@@ -453,9 +490,12 @@ colors = [REG_COLORS.get(r['reg_name'], 'gray') for r in valid]
 
 bars = ax.barh(labels, values, color=colors, edgecolor='white', linewidth=0.5)
 ax.axvline(adamw_final, color='#C44E52', linewidth=2.0, linestyle='--',
-           label=f'AdamW baseline  {adamw_final:.4f}')
+           label=f'AdamW wrong wd  {adamw_final:.4f}')
 ax.axvline(muon_final,  color='#4C72B0', linewidth=2.0, linestyle='--',
            label=f'Muon baseline   {muon_final:.4f}')
+if _adamw_correct_avail:
+    ax.axvline(adamw_correct_final, color='#e67e22', linewidth=2.0, linestyle='--',
+               label=f'AdamW✓  {adamw_correct_final:.4f}')
 ax.axvspan(muon_final, adamw_final, color='grey', alpha=0.10, label='Muon–AdamW gap')
 
 ax.bar_label(bars, fmt='%.4f', padding=4, fontsize=8)
@@ -485,25 +525,30 @@ if hybrid_results:
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 6), dpi=150, sharey=True)
 
+    # Use tab10 for both panels — 10 perceptually distinct colours
+    _tab10 = cm.get_cmap('tab10')
+    _DISTINCT = [_tab10(i) for i in range(10)]
+
     _groups = [
-        (axes[0], layer_group,  'Layer Depth Sweep\n(all matrix types → Muon, vary layers)',
-         cm.Blues,  np.linspace(0.4, 0.9, max(len(layer_group),  1))),
-        (axes[1], matrix_group, 'Matrix Type Sweep\n(all layers, vary which matrices → Muon)',
-         cm.Greens, np.linspace(0.4, 0.9, max(len(matrix_group), 1))),
+        (axes[0], layer_group,  'Layer Depth Sweep\n(all matrix types → Muon, vary layers)'),
+        (axes[1], matrix_group, 'Matrix Type Sweep\n(all layers, vary which matrices → Muon)'),
     ]
 
-    for ax, group, title, cmap, shade_range in _groups:
+    for ax, group, title in _groups:
         # AdamW / Muon baselines
         ax.plot(adamw_steps, adamw_losses, color='#C44E52', linewidth=2.2,
-                linestyle='--', zorder=6, label=f'AdamW  {adamw_final:.4f}')
+                linestyle='--', zorder=6, label=f'AdamW wrong wd  {adamw_final:.4f}')
         ax.plot(muon_steps,  muon_losses,  color='#4C72B0', linewidth=2.2,
                 linestyle='--', zorder=6, label=f'Muon   {muon_final:.4f}')
+        if _adamw_correct_avail:
+            ax.plot(_ac_steps, _ac_losses, color='#e67e22', linewidth=2.2,
+                    linestyle='--', zorder=6, label=f'AdamW✓  {adamw_correct_final:.4f}')
         ax.axhspan(muon_final, adamw_final, color='grey', alpha=0.08)
 
-        cols = cmap(shade_range)
-        for run, col in zip(group, cols):
+        for i, run in enumerate(group):
             if not run['steps']:
                 continue
+            col  = _DISTINCT[i % len(_DISTINCT)]
             desc = run.get('_description', run['exp_name'])
             fl_s = f'{run["final_loss"]:.4f}' if not np.isnan(run['final_loss']) else '—'
             gc_s = (f'  {run["gap_closed"]:+.1f}%' if not np.isnan(run['gap_closed']) else '')

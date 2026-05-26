@@ -57,10 +57,10 @@ export V6_DIR="$PROJECT_ROOT/V6 - Train"   # exported so Python heredoc can read
 
 # ── Experiment slice (1-based, inclusive) ─────────────────────────────────────
 # Set these to run only a subset of EXPERIMENTS from sweep_config.py.
-# Example: SLICE_START=3 SLICE_END=6 runs experiments 3,4,5,6.
-# Leave as 0 to run all experiments.
-SLICE_START=0
-SLICE_END=0
+# Example: sbatch --export=ALL,SLICE_START=3,SLICE_END=6 run_sequential.sh
+# Leave unset (or 0) to run all experiments.
+SLICE_START=${SLICE_START:-0}
+SLICE_END=${SLICE_END:-0}
 export SLICE_START SLICE_END
 
 echo "Project root : $PROJECT_ROOT"
@@ -103,6 +103,9 @@ for idx, exp in enumerate(EXPERIMENTS, 1):
     print(f'  {time.strftime("%H:%M:%S")}', flush=True)
     print(f'{"="*60}', flush=True)
 
+    # Scale warmdown proportionally to num_iterations (baseline: 1800 / 6200)
+    warmdown = round(1800 / 6200 * exp['num_iterations'])
+
     cmd = [
         'torchrun',
         '--standalone',
@@ -114,6 +117,7 @@ for idx, exp in enumerate(EXPERIMENTS, 1):
         '--reg_matrices',   exp['reg_matrices'],
         '--reg_layers',     exp['reg_layers'],
         '--num_iterations', str(exp['num_iterations']),
+        '--warmdown_iters', str(warmdown),
         '--save_every',     str(exp['save_every']),
     ]
     if exp.get('grad_flatten_strength', 0.0) > 0.0:

@@ -315,6 +315,10 @@ _p.add_argument('--weight_proj_strength',    type=float, default=0.0,
                 help='Post-update weight projection strength: flatten SV spectrum '
                      'of weight matrices after each optimizer step. '
                      '0=disabled, 1=fully flat (default: 0)')
+_p.add_argument('--grad_flatten_end_iter',   type=int,   default=0,
+                help='If >0, linearly anneal grad_flatten_strength from its initial '
+                     'value to 0 over the first N steps. Independent of LR schedule. '
+                     '0=disabled, constant strength throughout (default: 0)')
 _reg = _p.parse_args()
 
 # Apply overrides from CLI
@@ -328,6 +332,10 @@ _grad_balance_ratio   = _reg.grad_balance_ratio
 _weight_proj_strength = _reg.weight_proj_strength
 _reg_matrices         = [m.strip() for m in _reg.reg_matrices.split(',')]
 _reg_layers           = 'all' if _reg.reg_layers == 'all' else [int(x) for x in _reg.reg_layers.split(',')]
+# Short human-readable label derived from _reg_matrices for log messages.
+# e.g. ['attn.c_attn','attn.c_proj'] → 'attn'   ['mlp.c_proj','mlp.c_fc'] → 'mlp'
+#      ['attn.c_attn','mlp.c_proj']  → 'attn+mlp'
+_mat_label = '+'.join(sorted({m.split('.')[0] for m in _reg_matrices}))
 
 # V6 AdamW baseline thresholds for early stopping (from log_adamw.txt)
 _BASELINE  = {500: 4.3320, 1000: 3.9219, 1500: 3.7637, 2000: 3.6796, 2500: 3.6297, 3000: 3.5881}
@@ -494,17 +502,27 @@ for step in range(args.num_iterations + 1):
         p.grad /= train_accumulation_steps
 
     # gradient spectrum flattening (optional, strength=0 → disabled, no overhead)
+    # If grad_flatten_end_iter > 0, linearly anneal strength → 0 over first N steps.
     if _grad_flatten > 0.0:
-        flatten_gradient_spectrum(raw_model, _grad_flatten, _reg_matrices, _reg_layers)
+        if _reg.grad_flatten_end_iter > 0:
+            _anneal_factor = max(0.0, 1.0 - step / _reg.grad_flatten_end_iter)
+            _current_flatten = _grad_flatten * _anneal_factor
+        else:
+            _current_flatten = _grad_flatten
+        if _current_flatten > 0.0:
+            flatten_gradient_spectrum(raw_model, _current_flatten, _reg_matrices, _reg_layers)
 
     # regularization loss (float32, outside autocast, adds to existing grads)
     # Supports three modes:
     #   normal          : reg gradient added directly (original behaviour)
     #   grad_balance    : reg gradient scaled so its norm = ratio × task norm
     #   logging only    : measure norms every val_loss_every steps
-    reg_loss_val  = 0.0
-    _task_gnorm   = 0.0
-    _total_gnorm  = 0.0
+    reg_loss_val      = 0.0
+    _task_gnorm       = 0.0
+    _total_gnorm      = 0.0
+    _task_gnorm_attn  = 0.0   # gnorm on reg matrices only (before reg backward)
+    _total_gnorm_attn = 0.0   # gnorm on reg matrices only (after reg backward)
+    _attn_ps          = []    # list of params matching _reg_matrices (for attn-local gnorm)
     _log_gnorms   = _use_reg and master_process and (step % args.val_loss_every == 0 or last_step)
 
     if _use_reg:
@@ -515,6 +533,15 @@ for step in range(args.num_iterations + 1):
                 _task_gnorm = float(sum(
                     p.grad.norm()**2 for p in raw_model.parameters() if p.grad is not None
                 ) ** 0.5)
+            # Attention-local task gnorm: measures reg impact on the matrices it actually touches,
+            # not diluted by embedding (38.6M params) + MLP + LayerNorm that reg never touches.
+            if _log_gnorms:
+                _attn_ps = [p for n, p in raw_model.named_parameters()
+                            if p.grad is not None and p.dim() == 2
+                            and any(m in n for m in _reg_matrices)]
+                with torch.no_grad():
+                    _task_gnorm_attn = (float(sum(p.grad.norm()**2 for p in _attn_ps)**0.5)
+                                        if _attn_ps else 0.0)
 
         if _grad_balance_ratio > 0.0:
             # ── Gradient balancing: separate backward, then scale ────────────
@@ -548,6 +575,11 @@ for step in range(args.num_iterations + 1):
                                    _reg_matrices, _reg_layers)
             _rl.backward()
             reg_loss_val = _rl.item()
+            # Capture attention-local total gnorm now that reg grads have been added.
+            # This gives the TRUE per-matrix impact (not diluted by 125M unaffected params).
+            if _log_gnorms and _attn_ps:
+                with torch.no_grad():
+                    _total_gnorm_attn = float(sum(p.grad.norm()**2 for p in _attn_ps)**0.5)
 
         if _log_gnorms:
             with torch.no_grad():
@@ -562,7 +594,10 @@ for step in range(args.num_iterations + 1):
     # ── Post-update weight projection (option 4) ─────────────────────────────
     # Directly flattens the SV spectrum of weight matrices after each AdamW step.
     # Unlike gflat (gradient-space), this bypasses v_t entirely.
-    if _weight_proj_strength > 0.0 and master_process:
+    # NOTE: Must run on ALL ranks, not just master_process.  After opt.step() every
+    # rank has identical weights (same all-reduced gradient, same optimizer state).
+    # Applying projection on only rank 0 would cause weight divergence across GPUs.
+    if _weight_proj_strength > 0.0:
         with torch.no_grad():
             for name, p in raw_model.named_parameters():
                 if p.dim() != 2 or not any(m in name for m in _reg_matrices):
@@ -593,13 +628,86 @@ for step in range(args.num_iterations + 1):
             f.write(f"step:{step+1}/{args.num_iterations} train_loss:{train_loss.item():.4f} reg_loss:{reg_loss_val:.2e} train_time:{approx_time:.0f}ms step_avg:{approx_time/timed_steps:.2f}ms\n")
         if _log_gnorms and _task_gnorm > 0:
             _gnorm_ratio = _total_gnorm / _task_gnorm   # ≈1.0 means reg is negligible
+            # Attention-local ratio: same metric but restricted to reg matrices only.
+            # Much more meaningful — removes the dilution from 38.6M embedding + unaffected MLP params.
+            _attn_ratio_str = ''
+            if _task_gnorm_attn > 0 and _total_gnorm_attn > 0:
+                _attn_r = _total_gnorm_attn / _task_gnorm_attn
+                _attn_ratio_str = (f'  |  {_mat_label}_only: {_attn_r:.4f} '
+                                   f'(reg adds {(_attn_r - 1)*100:.2f}% to {_mat_label} grads)')
             _msg = (f'  grad_norms step:{step+1} '
                     f'task={_task_gnorm:.3e}  total={_total_gnorm:.3e}  '
                     f'total/task={_gnorm_ratio:.4f}  '
-                    f'(reg adds {(_gnorm_ratio-1)*100:.2f}% to update magnitude)\n')
+                    f'(reg adds {(_gnorm_ratio-1)*100:.2f}% to update magnitude)'
+                    f'{_attn_ratio_str}\n')
             print(_msg.strip())
             with open(logfile, 'a') as f:
                 f.write(_msg)
+        # ── Momentum statistics (every val_loss_every steps) ─────────────────
+        # SNR = mean(|m1| / sqrt(m2)) per param: how consistently each parameter
+        # is being pushed in one direction.  1.0 = perfectly consistent, 0 = noisy.
+        # m2_rms = sqrt(mean(m2)): typical gradient magnitude the adaptive LR sees.
+        # Comparing reg_mats vs other lets you see whether reg changes optimizer dynamics.
+        if _log_gnorms and _use_reg and step > 0:
+            _m1_snr_reg, _m2_rms_reg = [], []
+            _m1_snr_oth, _m2_rms_oth = [], []
+            _opt_state = optimizers[0].state   # single AdamW covers all params
+            for _pn, _pp in raw_model.named_parameters():
+                if _pp not in _opt_state or 'exp_avg' not in _opt_state[_pp]:
+                    continue
+                _st  = _opt_state[_pp]
+                _m1  = _st['exp_avg']
+                _m2  = _st['exp_avg_sq']
+                with torch.no_grad():
+                    _snr = (_m1.abs() / (_m2.sqrt() + 1e-8)).mean().item()
+                    _rms = _m2.mean().sqrt().item()
+                if _pp.dim() == 2 and any(m in _pn for m in _reg_matrices):
+                    _m1_snr_reg.append(_snr);  _m2_rms_reg.append(_rms)
+                elif _pp.dim() >= 2:
+                    _m1_snr_oth.append(_snr);  _m2_rms_oth.append(_rms)
+            if _m1_snr_reg:
+                # Guard against empty _m1_snr_oth (would only happen if _reg_matrices
+                # covers every 2D parameter in the model — very unlikely but would crash).
+                _oth_snr_str = (f'snr={sum(_m1_snr_oth)/len(_m1_snr_oth):.4f}  '
+                                f'm2_rms={sum(_m2_rms_oth)/len(_m2_rms_oth):.3e}'
+                                if _m1_snr_oth else 'snr=— (no other 2D params)')
+                _mom_msg = (
+                    f'  momentum step:{step+1} '
+                    f'reg_mats: snr={sum(_m1_snr_reg)/len(_m1_snr_reg):.4f}  '
+                    f'm2_rms={sum(_m2_rms_reg)/len(_m2_rms_reg):.3e}  |  '
+                    f'other:    {_oth_snr_str}\n')
+                print(_mom_msg.strip(), flush=True)
+                with open(logfile, 'a') as f:
+                    f.write(_mom_msg)
+
+        # ── SV spectrum of reg matrices (every 3×val_loss_every steps) ────────
+        # Logs the actual SV variance (what dynamic_sv_variance penalises) and
+        # effective rank of each reg matrix.  SVD of 24 attention matrices costs
+        # ~10 ms total; running 10× per 3000-step experiment is negligible.
+        _log_sv = (_use_reg and bool(_reg_matrices)   # already inside `if master_process:`
+                   and step > 0 and step % (args.val_loss_every * 3) == 0)
+        if _log_sv:
+            _sv_vars, _eff_ranks = [], []
+            with torch.no_grad():
+                for _pn, _pp in raw_model.named_parameters():
+                    if _pp.dim() != 2 or not any(m in _pn for m in _reg_matrices):
+                        continue
+                    _sv = torch.linalg.svdvals(_pp.detach().float())
+                    _sv_vars.append(_sv.var().item())
+                    _sv_p = _sv / (_sv.sum() + 1e-9)
+                    _eff_ranks.append(
+                        torch.exp(-(_sv_p * torch.log(_sv_p + 1e-9)).sum()).item())
+            if _sv_vars:
+                _sv_msg = (
+                    f'  sv_spectrum step:{step+1} '
+                    f'var_mean={sum(_sv_vars)/len(_sv_vars):.3e}  '
+                    f'var_max={max(_sv_vars):.3e}  '
+                    f'eff_rank_mean={sum(_eff_ranks)/len(_eff_ranks):.2f}  '
+                    f'eff_rank_min={min(_eff_ranks):.2f}\n')
+                print(_sv_msg.strip(), flush=True)
+                with open(logfile, 'a') as f:
+                    f.write(_sv_msg)
+
         train_losses.append((step+1, train_loss.item()))
 
 if master_process:

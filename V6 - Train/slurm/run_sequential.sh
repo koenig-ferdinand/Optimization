@@ -122,6 +122,8 @@ for idx, exp in enumerate(EXPERIMENTS, 1):
     ]
     if exp.get('grad_flatten_strength', 0.0) > 0.0:
         cmd += ['--grad_flatten_strength', str(exp['grad_flatten_strength'])]
+    if exp.get('grad_flatten_end_iter', 0) > 0:
+        cmd += ['--grad_flatten_end_iter', str(exp['grad_flatten_end_iter'])]
     if exp.get('grad_balance_ratio', 0.0) > 0.0:
         cmd += ['--grad_balance_ratio', str(exp['grad_balance_ratio'])]
     if exp.get('weight_proj_strength', 0.0) > 0.0:

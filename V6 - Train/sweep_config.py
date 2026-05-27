@@ -113,6 +113,89 @@ EXPERIMENTS = [
     dict(exp_name='wproj_05', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.05, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
     dict(exp_name='wproj_10', reg_name='none', reg_lambda=0.0, weight_proj_strength=0.10, reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all', num_iterations=3000, save_every=100, early_stop=False),
 
+    # ── Phase 5a: g_flat annealing ────────────────────────────────────────────
+    # Idea: high flatten strength during early exploration, then decay to 0 so
+    # late-stage gradients are precise (pure AdamW).  Decoupled from LR schedule.
+    # Baseline gflat_25/50/75 use constant strength throughout 3000 steps.
+    # Here we test whether annealing the strength to 0 before warmdown helps.
+    #
+    #   gflat_ann_25_e1300 : 0.25→0 over steps 0–1300  (before warmdown at ~2130)
+    #   gflat_ann_50_e1500 : 0.50→0 over steps 0–1500
+    #   gflat_ann_75_e1500 : 0.75→0 over steps 0–1500
+    #
+    # reg_matrices kept as MLP (same as baseline gflat_*), so only changes
+    # the schedule — not the target matrices.
+    dict(exp_name='gflat_ann_25_e1300', reg_name='none', reg_lambda=0.0,
+         grad_flatten_strength=0.25, grad_flatten_end_iter=1300,
+         reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='gflat_ann_50_e1500', reg_name='none', reg_lambda=0.0,
+         grad_flatten_strength=0.50, grad_flatten_end_iter=1500,
+         reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=False),
+    dict(exp_name='gflat_ann_75_e1500', reg_name='none', reg_lambda=0.0,
+         grad_flatten_strength=0.75, grad_flatten_end_iter=1500,
+         reg_matrices='mlp.c_proj,mlp.c_fc', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=False),
+
+    # ── Phase 5b: dynamic_sv_variance on attention matrices ───────────────────
+    # Prior dyn_sv_lam* experiments targeted MLP (mlp.c_proj,mlp.c_fc).
+    # Hybrid results show attention drives most of Muon's advantage (+2.9%).
+    # Here we test whether keeping attention SV spectrum wide improves AdamW.
+    #
+    # Naming convention: "dyn_sv_attn_*" = both c_attn+c_proj,
+    #                    "dyn_sv_cattn_*" = c_attn only (Q/K/V fused weight).
+    #
+    # Variants:
+    #   all layers, λ=1e-4 and 1e-3  (λ range from Phase 4 MLP experiments)
+    #   layers 0-5 only, λ=1e-4 and 1e-3  (early layers drive synergy per hybrid)
+    #   c_attn only (no c_proj), all layers, λ=1e-4  (isolate Q/K/V vs O matrix)
+    dict(exp_name='dyn_sv_attn_lam1e-4',       reg_name='dynamic_sv_variance', reg_lambda=1e-4,
+         reg_matrices='attn.c_attn,attn.c_proj', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='dyn_sv_attn_lam1e-3',       reg_name='dynamic_sv_variance', reg_lambda=1e-3,
+         reg_matrices='attn.c_attn,attn.c_proj', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='dyn_sv_attn_early_lam1e-4', reg_name='dynamic_sv_variance', reg_lambda=1e-4,
+         reg_matrices='attn.c_attn,attn.c_proj', reg_layers='0,1,2,3,4,5',
+         num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='dyn_sv_attn_early_lam1e-3', reg_name='dynamic_sv_variance', reg_lambda=1e-3,
+         reg_matrices='attn.c_attn,attn.c_proj', reg_layers='0,1,2,3,4,5',
+         num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='dyn_sv_cattn_lam1e-4',      reg_name='dynamic_sv_variance', reg_lambda=1e-4,
+         reg_matrices='attn.c_attn', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=True),
+
+    # ── Phase 5c: full 6200-iter run with best Phase 5b config ───────────────
+    # dyn_sv_attn_lam1e-4 was the best sweep result (+4.3% gap closed vs AdamW).
+    # This full run confirms whether the advantage holds to convergence and
+    # produces a complete checkpoint sequence for evolution analysis.
+    dict(exp_name='dyn_sv_attn_full_lam1e-4', reg_name='dynamic_sv_variance', reg_lambda=1e-4,
+         reg_matrices='attn.c_attn,attn.c_proj', reg_layers='all',
+         num_iterations=6200, save_every=100, early_stop=False),
+
+    # ── Phase 5d: dynamic_sv_variance on ALL weight matrices ─────────────────
+    # Phase 5b showed attn matrices drive most of the benefit.  Here we ask:
+    # does adding MLP (c_fc + c_proj) on top of attn further help, hurt, or do nothing?
+    #
+    # reg_matrices covers all 4 weight matrix types across 12 layers = 48 pairs.
+    # compute_reg_loss normalises by pair count, so the per-matrix gradient at a
+    # given λ is halved compared to attn-only (24 pairs).  Lambda choices are
+    # therefore shifted up relative to Phase 5b to keep per-matrix signal comparable:
+    #
+    #   lam5e-5  → per-matrix ≈ lam2.5e-5 on attn-only  (conservative; MLP can be fragile)
+    #   lam1e-4  → per-matrix ≈ lam5e-5   on attn-only
+    #   lam3e-4  → per-matrix ≈ lam1.5e-4 on attn-only  (slightly above best attn regime)
+    dict(exp_name='dyn_sv_all_lam5e-5', reg_name='dynamic_sv_variance', reg_lambda=5e-5,
+         reg_matrices='attn.c_attn,attn.c_proj,mlp.c_proj,mlp.c_fc', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='dyn_sv_all_lam1e-4', reg_name='dynamic_sv_variance', reg_lambda=1e-4,
+         reg_matrices='attn.c_attn,attn.c_proj,mlp.c_proj,mlp.c_fc', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=True),
+    dict(exp_name='dyn_sv_all_lam3e-4', reg_name='dynamic_sv_variance', reg_lambda=3e-4,
+         reg_matrices='attn.c_attn,attn.c_proj,mlp.c_proj,mlp.c_fc', reg_layers='all',
+         num_iterations=3000, save_every=100, early_stop=True),
+
     # ── Phase 2: full runs with best λ per regularizer (6200 iter) ───────────
     # sweep_summary.py will auto-use log_adamw_{SWEEP_END}.txt as the baseline.
     # Before running Phase 2: copy logs/adamw_3000/log.txt → log_adamw_3000.txt,

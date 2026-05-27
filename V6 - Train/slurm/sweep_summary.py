@@ -59,14 +59,16 @@ sys.path.insert(0, V6_DIR)
 from sweep_config import EXPERIMENTS, HYBRID_EXPERIMENTS
 
 REG_COLORS = {
-    'none':           'black',
-    'sv_variance':    '#1f77b4',
-    'orthogonal':     '#ff7f0e',
-    'effective_rank': '#2ca02c',
-    'stable_rank':    '#d62728',
-    'isometry':       '#9467bd',
-    'dead_sv':        '#8c564b',
-    'hybrid':         '#17becf',    # teal — layer-specific Muon substitution
+    'none':                  'black',
+    'sv_variance':           '#1f77b4',
+    'orthogonal':            '#ff7f0e',
+    'effective_rank':        '#2ca02c',
+    'stable_rank':           '#d62728',
+    'isometry':              '#9467bd',
+    'dead_sv':               '#8c564b',
+    'dynamic_sv_variance':   '#e377c2',   # pink — self-amplifying sv_variance
+    'log_effective_rank':    '#bcbd22',   # yellow-green — log-barrier effective rank
+    'hybrid':                '#17becf',   # teal — layer-specific Muon substitution
 }
 
 
@@ -165,23 +167,28 @@ else:
     print(f'[INFO] AdamW corrected : NOT YET AVAILABLE (run adamw_3000_correct_warmdown)')
 
 # ── Filter experiments by phase ───────────────────────────────────────────────
-# Phase 1 (SWEEP_END ≤ 3000): exclude full_* runs (they use a longer schedule)
-# Phase 2 (SWEEP_END > 3000): exclude non-full_* runs (they are short sweeps)
+# Filter purely by num_iterations so naming conventions don't matter.
+# Phase 1 (SWEEP_END ≤ 3000): keep only experiments with num_iterations ≤ SWEEP_END,
+#   excluding standalone AdamW/Muon baseline replications (loaded separately above).
+# Phase 2 (SWEEP_END > 3000): keep only experiments with num_iterations ≥ SWEEP_END.
+#   This correctly includes any full-length experiment regardless of name prefix
+#   (e.g. 'dyn_sv_attn_full_lam1e-4' as well as 'full_sv_var').
 if SWEEP_END <= 3000:
     _before = len(EXPERIMENTS)
     EXPERIMENTS = [e for e in EXPERIMENTS
-                   if not e['exp_name'].startswith('full_')
-                   and e['exp_name'] not in (f'adamw_{SWEEP_END}', 'adamw_3000_correct_warmdown')]
+                   if e['num_iterations'] <= SWEEP_END
+                   and not e['exp_name'].startswith(('adamw_', 'muon_'))]
     _skip = _before - len(EXPERIMENTS)
     if _skip:
-        print(f'[INFO] Phase 1 mode: skipped {_skip} full_* experiment(s)')
+        print(f'[INFO] Phase 1 mode: skipped {_skip} longer/baseline experiment(s)')
 else:
     _before = len(EXPERIMENTS)
     EXPERIMENTS = [e for e in EXPERIMENTS
-                   if e['exp_name'].startswith('full_') or e['reg_name'] == 'none']
+                   if e['num_iterations'] >= SWEEP_END
+                   and not e['exp_name'].startswith(('adamw_', 'muon_'))]
     _skip = _before - len(EXPERIMENTS)
     if _skip:
-        print(f'[INFO] Phase 2 mode: skipped {_skip} non-full_* experiment(s)')
+        print(f'[INFO] Phase 2 mode: skipped {_skip} short-sweep experiment(s)')
 
 muon_steps   = sorted(muon_data.keys())
 adamw_steps  = sorted(adamw_data.keys())
@@ -526,7 +533,12 @@ if hybrid_results:
     fig, axes = plt.subplots(1, 2, figsize=(16, 6), dpi=150, sharey=True)
 
     # Use tab10 for both panels — 10 perceptually distinct colours
-    _tab10 = cm.get_cmap('tab10')
+    # cm.get_cmap is deprecated in matplotlib ≥ 3.7; use matplotlib.colormaps instead
+    try:
+        import matplotlib
+        _tab10 = matplotlib.colormaps['tab10']
+    except (AttributeError, KeyError):
+        _tab10 = cm.get_cmap('tab10')  # fallback for older matplotlib
     _DISTINCT = [_tab10(i) for i in range(10)]
 
     _groups = [
